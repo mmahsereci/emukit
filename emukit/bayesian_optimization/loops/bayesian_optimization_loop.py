@@ -5,7 +5,7 @@ from ..acquisitions.log_acquisition import LogAcquisition
 from ..local_penalization_calculator import LocalPenalizationPointCalculator
 from ...core.interfaces import IDifferentiable
 from ...core.loop.loop_state import create_loop_state
-from ...core.loop import OuterLoop, Sequential, FixedIntervalUpdater, ModelUpdater
+from ...core.loop import OuterLoop, SequentialPointCalculator, FixedIntervalUpdater, ModelUpdater
 from ...core.optimization import AcquisitionOptimizer
 from ...core.parameter_space import ParameterSpace
 from ...core.acquisition import Acquisition
@@ -22,7 +22,7 @@ class BayesianOptimizationLoop(OuterLoop):
         :param model: The model that approximates the underlying function
         :param space: Input space where the optimization is carried out.
         :param acquisition: The acquisition function that will be used to collect new points (default, EI). If batch
-                            size is greater than one, this acquisition must output positive values only. 
+                            size is greater than one, this acquisition must output positive values only.
         :param batch_size: How many points to evaluate in one iteration of the optimization loop. Defaults to 1.
         :param model_updaters: Defines how and when the model is updated if new data arrives.
                               Defaults to updating hyper-parameters every iteration.
@@ -36,7 +36,7 @@ class BayesianOptimizationLoop(OuterLoop):
 
         acquisition_optimizer = AcquisitionOptimizer(space)
         if batch_size == 1:
-            candidate_point_calculator = Sequential(acquisition, acquisition_optimizer)
+            candidate_point_calculator = SequentialPointCalculator(acquisition, acquisition_optimizer)
         else:
             if not isinstance(model, IDifferentiable):
                 raise ValueError('Model must implement ' + str(IDifferentiable) +

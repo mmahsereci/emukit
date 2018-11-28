@@ -25,7 +25,7 @@ class CandidatePointCalculator(abc.ABC):
         pass
 
 
-class Sequential(CandidatePointCalculator):
+class SequentialPointCalculator(CandidatePointCalculator):
     """ This candidate point calculator chooses one candidate point at a time """
     def __init__(self, acquisition: Acquisition, acquisition_optimizer: AcquisitionOptimizerBase) -> None:
         """
@@ -61,7 +61,8 @@ class GreedyBatchPointCalculator(CandidatePointCalculator):
         """
         :param model: Model that is used by the acquisition function
         :param acquisition: Acquisition to be optimized to find each point in batch
-        :param acquisition_optimizer: Acquisition optimizer that optimizes acquisition function to find each point in batch
+        :param acquisition_optimizer: Acquisition optimizer that optimizes acquisition function
+                                      to find each point in batch
         :param batch_size: Number of points to calculate in batch
         """
         if (not isinstance(batch_size, int)) or (batch_size < 1):
