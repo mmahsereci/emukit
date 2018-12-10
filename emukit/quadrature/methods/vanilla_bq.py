@@ -58,13 +58,8 @@ class VanillaBayesianQuadrature(WarpedBayesianQuadratureModel):
 
         :returns: estimator of integral and its variance
         """
-        integral_mean, kernel_mean_X = self._compute_integral_mean_and_kernel_mean()
+        kernel_mean_X = self.base_gp.kern.qK(self.X)
+        integral_mean = np.dot(kernel_mean_X, self.base_gp.graminv_residual())[0, 0]
         integral_var = self.base_gp.kern.qKq() - np.square(lapack.dtrtrs(self.base_gp.gram_chol(), kernel_mean_X.T,
                                                            lower=1)[0]).sum(axis=0, keepdims=True).T
         return integral_mean, integral_var
-
-    # helpers
-    def _compute_integral_mean_and_kernel_mean(self) -> Tuple[float, np.ndarray]:
-        kernel_mean_X = self.base_gp.kern.qK(self.X)
-        integral_mean = np.dot(kernel_mean_X, self.base_gp.graminv_residual())[0, 0]
-        return integral_mean, kernel_mean_X
