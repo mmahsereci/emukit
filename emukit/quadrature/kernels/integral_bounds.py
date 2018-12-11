@@ -60,3 +60,12 @@ class IntegralBounds:
             param = ContinuousParameter(name=name_d, min_value=lb_d, max_value=ub_d)
             continuous_parameters.append(param)
         return continuous_parameters
+
+    def get_area_of_integration_domain(self) -> float:
+        """
+        computes area of intgeation domain
+        :return: area of integration domain
+        """
+        lower_bounds, upper_bounds = self.get_lower_and_upper_bounds()
+        differences = upper_bounds - lower_bounds
+        return float(np.prod(differences))

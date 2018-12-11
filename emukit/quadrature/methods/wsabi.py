@@ -70,6 +70,7 @@ class WSABI(WarpedBayesianQuadratureModel):
 class WSABIL(WSABI):
     """
     The WSABI-L Bayesian quadrature model (Gunter et al. 2014)
+    WSABI-L must be used with the RBF kernel.
 
     WSABI-L approximates the integrand as follows:
     - squared transformation of gp-base-model (chi-squared).
@@ -116,7 +117,6 @@ class WSABIL(WSABI):
 
         return mean_approx, cov_approx, mean_base, cov_base
 
-    # TODO: this holds for offset = 0 only?
     def integrate(self) -> Tuple[float, float]:
         """
         Computes an estimator of the integral as well as its variance.
@@ -139,13 +139,18 @@ class WSABIL(WSABI):
         qK = qK_vec.reshape(N, N)
 
         # integral mean
-        integral_mean = 0.5 * np.sum(np.outer(weights, weights) * qK * K)
+        # TODO: need to multiply offset with integration domain of not a prop measure, otherwise 1.
+        integral_mean = self.offset + 0.5 * np.sum(np.outer(weights, weights) * qK * K)
 
-        return integral_mean, 1.
+        # integral variance
+
+        return float(integral_mean), 1.
+
 
 class WSABIM(WSABI):
     """
     The WSABI-M Bayesian quadrature model (Gunter et al. 2014)
+    WSABI-M must be used with the RBF kernel.
 
     WSABI-M approximates the integrand as follows:
     - squared transformation of gp-base-model (chi-squared).
@@ -199,4 +204,31 @@ class WSABIM(WSABI):
 
         :returns: estimator of integral and its variance
         """
-        raise NotImplementedError
+        N, D = self.X.shape
+
+        # weights and kernel
+        X = self.X / np.sqrt(2)
+        K = self.base_gp.kern.K(X, X)
+        weights = self.base_gp.graminv_residual()
+
+        # integral of scaled kernel
+        X_sums = 0.5 * (self.X.T[:, :, None] + self.X.T[:, None, :])
+        X_sums_vec = X_sums.reshape(D, -1).T
+
+        lengthscale_factor = 1./np.sqrt(2)
+        qK_vec = self.base_gp.kern.qK(X_sums_vec, lengthscale_factor=lengthscale_factor)
+        qK = qK_vec.reshape(N, N)
+        first_term = 0.5 * np.sum(np.outer(weights, weights) * qK * K)
+
+        init_qvar = (self.base_gp.kern.variance * self.base_gp.kern.integral_bounds.get_area_of_integration_domain())[0]
+        lower_chol = self.base_gp.gram_chol()
+        gram_inv = lapack.dtrtrs(lower_chol.T, (lapack.dtrtrs(lower_chol, np.eye(lower_chol.shape[0]), lower=1)[0]),
+                                 lower=0)[0]
+        second_term = 0.5 * (init_qvar - np.sum(gram_inv * qK))
+
+        # integral mean
+        integral_mean = self.offset + first_term + second_term
+
+        # integral variance
+
+        return integral_mean, 1.

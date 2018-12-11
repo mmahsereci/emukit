@@ -44,7 +44,7 @@ class QuadratureRBF(QuadratureKernel):
         :param lengthscale_factor: positive multiplicative scaling of the lengthscale
         :returns: kernel mean at location x2, shape (1, N)
         """
-        lengthscale = self.lengthscale * lengthscale_factor
+        lengthscale = (self.lengthscale * lengthscale_factor)[0]
         erf_lo = erf(self._scaled_vector_diff(self.lower_bounds, x2, lengthscale_factor))
         erf_up = erf(self._scaled_vector_diff(self.upper_bounds, x2, lengthscale_factor))
         kernel_mean = self.variance * (lengthscale * np.sqrt(np.pi / 2.) * (erf_up - erf_lo)).prod(axis=1)
@@ -67,7 +67,7 @@ class QuadratureRBF(QuadratureKernel):
 
         :returns: double integrated kernel
         """
-        lengthscale = self.lengthscale * lengthscale_factor
+        lengthscale = (self.lengthscale * lengthscale_factor)[0]
         prefac = self.variance * (2. * lengthscale**2)**self.input_dim
         diff_bounds_scaled = self._scaled_vector_diff(self.upper_bounds, self.lower_bounds, lengthscale_factor)
         exp_term = np.exp(-diff_bounds_scaled**2) - 1.
@@ -115,7 +115,6 @@ class QuadratureRBF(QuadratureKernel):
         :param v2: second vector, must have same second dimensions as v1
         :param lengthscale_factor: positive multiplicative scaling of the lengthscale
         :return: scaled difference between v1 and v2, np.ndarray with unchanged dimensions
-
         """
-        lengthscale = self.lengthscale * lengthscale_factor
+        lengthscale = (self.lengthscale * lengthscale_factor)[0]
         return (v1 - v2) / (lengthscale * np.sqrt(2))
