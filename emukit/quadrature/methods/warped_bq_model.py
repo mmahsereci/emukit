@@ -39,6 +39,10 @@ class WarpedBayesianQuadratureModel(IModel):
     def Y(self) -> np.ndarray:
         return self.transform(self.base_gp.Y)
 
+    @property
+    def Y_base(self) -> np.ndarray:
+        return self.base_gp.Y
+
     @ property
     def integral_bounds(self) -> IntegralBounds:
         return self.base_gp.kern.integral_bounds

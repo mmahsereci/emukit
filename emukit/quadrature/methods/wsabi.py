@@ -8,23 +8,47 @@ from scipy.linalg import lapack
 
 from emukit.quadrature.methods.warped_bq_model import WarpedBayesianQuadratureModel
 from emukit.quadrature.interfaces.base_gp import IBaseGaussianProcess
+from emukit.quadrature.kernels.quadrature_rbf import QuadratureRBF
 
 
 class WSABI(WarpedBayesianQuadratureModel):
-    """Base class for WSABI, Gunter et al. 2014"""
+    """
+    Base class for WSABI, Gunter et al. 2014
+
+    WSABI must be used with the RBF kernel.
+    """
     def __init__(self, base_gp: IBaseGaussianProcess, adapt_offset: bool = False):
         """
-        :param base_gp: a model derived from BaseGaussianProcess
+        :param base_gp: a model derived from BaseGaussianProcess with QuadratureRBF quadrature kernel
         :param adapt_offset: if True the offset the offset will be updated after new datapoints have been collected,
         if False, the offset will be constant at 0. defaults to False. Offset refers to 'alpha' in Gunter et al.
         """
+        if not isinstance(base_gp.kern, QuadratureRBF):
+            raise ValueError("WSABI can only be used with quadrature kernel which are instances of  QuadratureRBF, ",
+                             base_gp.kern.__class__.__name__, " given instead.")
+
         self.adapt_offset = adapt_offset
-        if adapt_offset:
+        if adapt_offset:  # TODO: must be zero if not integrated over prob measure. otherwise integral is infty
             self._compute_and_set_offset()
         else:
             self.offset = 0.
 
         super(WSABI, self).__init__(base_gp)
+
+    # TODO: check how it can be called after function evaluations (currently it is not)
+    # TODO: of this is called also the Y values need to be transformed again.
+    def _compute_and_set_offset(self):
+        """if adapted, it uses the value given in Gunter et al. 2014"""
+        if self.adapt_offset:
+            # get data before offset is changed
+            Y = self.Y.copy()
+
+            # compute and set the new offset. this will change the transformation
+            minL = min(self.base_gp.Y)[0]  # TODO: check if this returns the correct thing
+            self.offset = 0.8 * minL
+
+            # need to reset data because the transformation changed with the  offset
+            self.set_data(self.X, Y)
 
     def transform(self, Y):
         """ Transform from base-GP to integrand """
@@ -34,18 +58,8 @@ class WSABI(WarpedBayesianQuadratureModel):
         """ Transform from integrand to base-GP """
         return np.sqrt(np.absolute(2.*(Y - self.offset)))
 
-    # TODO: check how it can be called after function evaluations (currently it is not)
-    def _update_offset(self):
-        if self.offset:
-            self._compute_and_set_offset()
-
-    def _compute_and_set_offset(self):
-        """if adapted, it uses the value given in Gunter et al. 2014"""
-        if self.adapt_offset:
-            minL = min(self.base_gp.Y)[0]  # TODO: check if this returns the correct thing
-            self.offset = 0.8 * minL
-
-    def _symmetrize(self, A: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def _symmetrize(A: np.ndarray) -> np.ndarray:
         """
         :param A: a square matrix, shape (N, N)
         :return: the symmetrized matrix 0.5 (A + A')
@@ -102,24 +116,32 @@ class WSABIL(WSABI):
 
         return mean_approx, cov_approx, mean_base, cov_base
 
-    # TODO: this hold for offset = 0 only?
+    # TODO: this holds for offset = 0 only?
     def integrate(self) -> Tuple[float, float]:
         """
         Computes an estimator of the integral as well as its variance.
 
         :returns: estimator of integral and its variance
         """
+        N, D = self.X.shape
+
+        # weights and kernel
+        X = self.X / np.sqrt(2)
+        K = self.base_gp.kern.K(X, X)
+        weights = self.base_gp.graminv_residual()
+
+        # integral of scaled kernel
+        X_sums = 0.5 * (self.X.T[:, :, None] + self.X.T[:, None, :])
+        X_sums_vec = X_sums.reshape(D, -1).T
+
+        lengthscale_factor = 1./np.sqrt(2)
+        qK_vec = self.base_gp.kern.qK(X_sums_vec, lengthscale_factor=lengthscale_factor)
+        qK = qK_vec.reshape(N, N)
+
         # integral mean
-        kernel_mean_X = self.base_gp.kern.qK(self.X)
-        integral_mean = np.dot(kernel_mean_X, self.base_gp.graminv_residual())[0, 0]
+        integral_mean = 0.5 * np.sum(np.outer(weights, weights) * qK * K)
 
-        # integral variance
-        qKq = self.base_gp.kern.qKq()
-        gram_chol = self.base_gp.gram_chol()
-        integral_var = qKq - np.square(lapack.dtrtrs(gram_chol, kernel_mean_X.T, lower=1)[0]).sum(axis=0,
-                                                                                                  keepdims=True).T[0, 0]
-        return integral_mean, integral_var
-
+        return integral_mean, 1.
 
 class WSABIM(WSABI):
     """

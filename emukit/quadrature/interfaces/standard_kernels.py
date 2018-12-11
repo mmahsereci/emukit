@@ -15,9 +15,9 @@ class IStandardKernel:
         """
         The kernel k(x1, x2) evaluated at x1 and x2
 
-        :param x1: first argument of the kernel
-        :param x2: second argument of the kernel
-        :returns: kernel evaluated at x1, x2
+        :param x1: first argument of the kernel, shape (num_points N, input_dim)
+        :param x2: second argument of the kernel, shape (num_points M, input_dim)
+        :returns: kernel evaluated at x1, x2, shape (N, M)
         """
         raise NotImplementedError
 
@@ -26,8 +26,8 @@ class IStandardKernel:
         """
         gradient of the kernel wrt x1 evaluated at pair x1, x2
 
-        :param x1: first argument of the kernel, shape = (n_points N, input_dim)
-        :param x2: second argument of the kernel, shape = (n_points M, input_dim)
+        :param x1: first argument of the kernel, shape (n_points N, input_dim)
+        :param x2: second argument of the kernel, shape (n_points M, input_dim)
         :return: the gradient of the kernel wrt x1 evaluated at (x1, x2), shape (input_dim, N, M)
         """
         raise NotImplementedError
@@ -36,7 +36,7 @@ class IStandardKernel:
         """
         gradient of the diagonal of the kernel (the variance) v(x):=k(x, x) evaluated at x
 
-        :param x: argument of the kernel, shape = (n_points M, input_dim)
+        :param x: argument of the kernel, shape (n_points M, input_dim)
         :return: the gradient of the diagonal of the kernel evaluated at x, shape (input_dim, M)
         """
         raise NotImplementedError
