@@ -143,8 +143,16 @@ class WSABIL(WSABI):
         integral_mean = self.offset + 0.5 * np.sum(np.outer(weights, weights) * qK * K)
 
         # integral variance
+        qK_weights = np.dot(qK, weights)  # 1 x N
+        lower_chol = self.base_gp.gram_chol()
+        gram_inv_qK_weights = lapack.dtrtrs(lower_chol.T, (lapack.dtrtrs(lower_chol, qK_weights.T, lower=1)[0]),
+                                            lower=0)[0]
 
-        return float(integral_mean), 1.
+        second_term = np.dot(qK_weights, gram_inv_qK_weights)
+
+        integral_variance = second_term[0, 0]
+
+        return float(integral_mean), integral_variance
 
 
 class WSABIM(WSABI):
