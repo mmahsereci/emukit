@@ -33,8 +33,8 @@ class UserFunctionWrapper(UserFunction):
     def __init__(self, f: Callable):
         """
         :param f: A python function that takes in a 2d numpy ndarray of inputs and returns a either a 2d numpy array
-                  of function outputs or a tuple of (outputs, evaluation_costs) where the outputs are 2d and the
-                  cost is 1d
+                  of function outputs or a tuple of (outputs, evaluation_costs) where both the outputs and the
+                  cost are 2d
         """
         self.f = f
 
@@ -56,12 +56,15 @@ class UserFunctionWrapper(UserFunction):
         if isinstance(outputs, tuple):
             user_fcn_outputs = outputs[0]
             cost = outputs[1]
-        else:
+        elif isinstance(outputs, np.ndarray):
             user_fcn_outputs = outputs
-            cost = np.array([None] * user_fcn_outputs.shape[0])
+            cost = [None] * user_fcn_outputs.shape[0]
+        else:
+            raise ValueError("User provided function should return a tuple or an ndarray, "
+                             "{} received".format(type(outputs)))
 
         if user_fcn_outputs.ndim != 2:
-            raise ValueError("User function should return 2d array or a tuple of 2d array as an output, "
+            raise ValueError("User function should return 2d array or a tuple of 2d arrays as an output, "
                              "actual output dimensionality is {}".format(outputs.ndim))
 
         results = []
@@ -102,15 +105,30 @@ class MultiSourceFunctionWrapper(UserFunction):
 
         _log.info("Evaluating multi-source user function for {} point(s)".format(inputs.shape[0]))
         # Run each source function for all inputs at that source
-        outputs = []
+        indices, outputs, costs = [], [], []
+        source_indices = inputs[:, self.source_index]
+        source_inputs = np.delete(inputs, self.source_index, axis=1)
         for i_source in range(n_sources):
             # Find inputs at that source
-            is_this_source = inputs[:, self.source_index] == i_source
-            this_source_inputs = np.delete(inputs[is_this_source, :], self.source_index, axis=1)
-            outputs.append(self.f[i_source](this_source_inputs))
+            this_source_input_indices = np.flatnonzero(source_indices == i_source)
+            indices.append(this_source_input_indices)
+            this_source_inputs = source_inputs[this_source_input_indices]
+            this_outputs = self.f[i_source](this_source_inputs)
 
+            if isinstance(this_outputs, tuple):
+                outputs.append(this_outputs[0])
+                costs.append(this_outputs[1])
+            elif isinstance(this_outputs, np.ndarray):
+                outputs.append(this_outputs)
+                costs.append(np.full(this_outputs.shape[0], None))
+            else:
+                raise ValueError("User provided function should return a tuple or an ndarray, "
+                                 "{} received".format(type(outputs)))
+
+        sort_indices = np.argsort(np.concatenate(indices, axis=0))
         outputs_array = np.concatenate(outputs, axis=0)
+        costs_array = np.concatenate(costs, axis=0)
         results = []
-        for x, y in zip(inputs, outputs_array):
-            results.append(UserFunctionResult(x, y))
+        for x, y, c in zip(inputs, outputs_array[sort_indices], costs_array[sort_indices]):
+            results.append(UserFunctionResult(x, y, c))
         return results

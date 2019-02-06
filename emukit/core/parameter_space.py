@@ -1,8 +1,7 @@
 # Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-
-
-from typing import List
+import itertools
+from typing import List, Tuple
 
 import numpy as np
 import GPyOpt
@@ -65,6 +64,19 @@ class ParameterSpace(object):
                 return param
         raise ValueError('Parameter with name ' + name + ' not found.')
 
+    def get_bounds(self) -> List[Tuple]:
+        """
+        Returns a list of tuples containing the min and max value each parameter can take.
+
+        If the parameter space contains categorical variables, the min and max values correspond to each variable used
+        to encode the categorical variables.
+        """
+
+        # bounds is a list of lists
+        bounds = [param.bounds for param in self.parameters]
+        # Convert list of lists to one list
+        return list(itertools.chain.from_iterable(bounds))
+
     def round(self, x: np.ndarray) -> np.ndarray:
         """
         Rounds given values x to closest valid values within the space.
@@ -118,13 +130,20 @@ class ParameterSpace(object):
         :param x: 2d numpy array of points to check
         :return: A 1d numpy array which contains a boolean indicating whether each point is in domain
         """
-        if x.shape[1] != len(self.parameters):
-            raise ValueError('x should have number of columns equal to dimensionality of the parameter space')
+        len_encoding = sum(len(param.model_parameters) for param in self.parameters)
+        if x.shape[1] != len_encoding:
+            raise ValueError('x should have number of columns equal to the sum'
+                             'of all parameter encodings, expected {} actual {}'
+                             .format(x.shape[1], len_encoding))
 
         in_domain = np.ones(x.shape[0], dtype=bool)
-        for i, param in enumerate(self._parameters):
+        encoding_index = 0
+        for param in self._parameters:
             # First check if this particular parameter is in domain
-            param_in_domain = param.check_in_domain(x[:, i])
+            param_in_domain = [
+                param.check_in_domain(x[[point_ix], encoding_index:(encoding_index + param.dimension)])
+                for point_ix in range(x.shape[0])]
             # Set in_domain to be False if this parameter or any previous parameter is out of domain
             in_domain = np.all([in_domain, param_in_domain], axis=0)
+            encoding_index += param.dimension
         return in_domain

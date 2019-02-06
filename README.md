@@ -1,7 +1,6 @@
 # Emukit
 
 [![Master Branch Build Status](https://travis-ci.org/amzn/emukit.svg?branch=master)](https://travis-ci.org/amzn/emukit) |
-[![Develop Branch Build Status](https://travis-ci.org/amzn/emukit.svg?branch=develop)](https://travis-ci.org/amzn/emukit) |
 [![Documentation Status](https://readthedocs.org/projects/emukit/badge/?version=latest)](https://emukit.readthedocs.io/en/latest/?badge=latest) |
 [![Tests Coverage](https://codecov.io/gh/amzn/emukit/branch/master/graph/badge.svg)](https://codecov.io/gh/amzn/emukit) |
 [![GitHub License](https://img.shields.io/github/license/amzn/emukit.svg)](https://github.com/amzn/emukit/blob/master/LICENSE)
@@ -24,24 +23,16 @@ Emukit is agnostic to the underlying modelling framework, which means you can us
 
 ## Installation
 
-Currently only installation from sources is supported.
+To install emukit, simply run
+```
+pip install emukit
+```
+
+For other install options, see our [documentation](https://emukit.readthedocs.io/en/latest/installation.html).
 
 ### Dependencies / Prerequisites
 Emukit's primary dependencies are Numpy, GPy and GPyOpt.
 See [requirements](requirements/requirements.txt).
-
-### Install from sources
-To install Emukit from source, create a local folder where you would like to put Emukit source code, and run following commands:
-```
-git clone https://github.com/amzn/Emukit.git
-cd Emukit
-python setup.py install
-```
-
-Alternatively you can run
-```
-pip install git+https://github.com/amzn/Emukit.git
-```
 
 ## Getting started
 For examples see our [tutorial notebooks](http://nbviewer.jupyter.org/github/amzn/emukit/blob/master/notebooks/index.ipynb).
