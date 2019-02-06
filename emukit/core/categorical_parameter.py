@@ -3,7 +3,7 @@
 
 
 import numpy as np
-from typing import List
+from typing import List, Tuple
 
 from .encodings import Encoding
 from .parameter import Parameter
@@ -36,6 +36,14 @@ class CategoricalParameter(Parameter):
         return self.encoding.round(x)
 
     @property
+    def bounds(self) -> List[Tuple]:
+        """
+        Returns a list of tuples containing where each tuple contains the minimum and maximum of the variables used to
+        encode the categorical parameter..
+        """
+        return [(param.min, param.max) for param in self._cont_params]
+
+    @property
     def dimension(self) -> int:
         return self.encodings.shape[1]
 
@@ -43,9 +51,13 @@ class CategoricalParameter(Parameter):
         """
         Verifies that given values lie within the parameter's domain
 
-        :param x: Value to be checked
+        :param x: 2d numpy array with shape (points, encoding) of points to check
         :return: A boolean value which indicates whether all points lie in the domain
         """
+        if x.ndim != 2 or x.shape[1] != self.dimension:
+            raise ValueError("Expected x shape (points, {}), actual is {}"
+                             .format(self.dimension, x.shape))
+
         for i, param in enumerate(self._cont_params):
             # First check if this particular parameter is in domain
             param_in_domain = param.check_in_domain(x[:, i])
