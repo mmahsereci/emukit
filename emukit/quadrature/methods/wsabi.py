@@ -35,6 +35,8 @@ class WSABI(WarpedBayesianQuadratureModel):
 
         super(WSABI, self).__init__(base_gp)
 
+        # Todo: reset integral bounds to infy since wsabi ca not handle non-infty
+
     # TODO: check how it can be called after function evaluations (currently it is not)
     # TODO: of this is called also the Y values need to be transformed again.
     def _compute_and_set_offset(self):
