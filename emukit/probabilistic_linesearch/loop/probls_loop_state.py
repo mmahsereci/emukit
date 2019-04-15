@@ -3,7 +3,7 @@
 
 
 import numpy as np
-from typing import List
+from typing import List, Tuple
 
 from . import ProbLSUserFunctionResult
 from ...core.loop import LoopState
@@ -14,14 +14,18 @@ class ProbLSLoopState(LoopState):
     Contains the state of the loop, which includes a history of all function evaluations
     """
 
-    def __init__(self, initial_results: List[ProbLSUserFunctionResult], initial_wolfe_probabilities: List[float]) \
-            -> None:
+    def __init__(self, initial_results: List[ProbLSUserFunctionResult], initial_wolfe_probabilities: List[float],
+                 alpha0: float, alpha_stats: float) -> None:
         """
         :param initial_results: The function results from previous function evaluations
         :param initial_wolfe_probabilities: the wolfe probabilities corresponding to the initial results
+        :param alpha0: initial step size
+        :param alpha_stats: running average
         """
         super().__init__(initial_results)
         self._wolfe_probabilities = initial_wolfe_probabilities
+        self._alpha0 = alpha0
+        self._alpha_stats = alpha_stats
 
     @property
     def dY(self) -> np.ndarray:
@@ -47,10 +51,23 @@ class ProbLSLoopState(LoopState):
     @property
     def wolfe_probabilities(self):
         """
-        :return: The wolfe probabilities in a 2d array: number of points by output dimensions.
+        :return: The Wolfe probabilities in a 2d array: number of points by output dimensions.
         """
         # Todo: check if this is a 2d array
         return np.array(self._wolfe_probabilities)
+
+    def get_entry_by_index(self, idx: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
+        """:return: evaluation beloning to idx"""
+        return self.results.X[idx], self.results.Y[idx], self.results.dY[idx], self.results.varY[idx], \
+               self.results.vardY[idx], self._wolfe_probabilities[idx]
+
+    @property
+    def alpha_stats(self):
+        return self._alpha_stats
+
+    @property
+    def alpha0(self):
+        return self.alpha0
 
 
 def create_loop_state_probls(x_init: np.ndarray, y_init: np.ndarray, dy_init:np.ndarray, vary_init:np.ndarray,

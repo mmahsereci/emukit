@@ -23,6 +23,7 @@ class CubicSplineGP(IModel):
         :param sigmaf: The variance of the noisy function values
         :param sigmaf: The variance of the noisy projected gradients
         """
+        # Todo: cubic splice GP needs to do the scaling such tah loop only sees the original values
         self.sigmaf = sigmaf
         self.sigmadf = sigmadf
         self.kernel = IntegratedWienerKernel()

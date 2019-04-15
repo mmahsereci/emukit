@@ -17,12 +17,26 @@ class WolfeProbability(Acquisition):
         This acquisition computes for a given input the probability that the Wolfe conditions are fulfilled.
 
         :param model: A Cubic spline Gaussian process model
+        :param wolfe_conditions: The probabilistic Wolfe conditions
         """
         self.model = model
         if WolfeConditions is None:
-            self.wolfe_conditions = WolfeConditions()
+            self._wolfe_conditions = WolfeConditions()
         else:
-            self.wolfe_conditions = wolfe_conditions
+            self._wolfe_conditions = wolfe_conditions
+
+    @property
+    def wolfe_condition(self):
+        return self._wolfe_conditions
+
+    @property
+    def has_gradients(self) -> bool:
+        """
+        Abstract property. Whether acquisition value has analytical gradient calculation available.
+
+        :return: True if gradients are available
+        """
+        return False
 
     def evaluate(self, x: np.ndarray) -> np.ndarray:
         """
@@ -42,18 +56,9 @@ class WolfeProbability(Acquisition):
         M0, VV0 = self.model.predict(self.model.T)
         mT = 0.
 
-        ma = m0 -
+        ma = m0
         pwolfe = np.zeros([1, 1])
         return pwolfe
-
-    @property
-    def has_gradients(self) -> bool:
-        """
-        Abstract property. Whether acquisition value has analytical gradient calculation available.
-
-        :return: True if gradients are available
-        """
-        return False
 
 
 def compute_bivariate_normal_integral(x_low: float, x_upp: float, y_low: float, y_upp: float, rho: float) -> float:

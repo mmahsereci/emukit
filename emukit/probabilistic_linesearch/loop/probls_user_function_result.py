@@ -13,11 +13,11 @@ class ProbLSUserFunctionResult(UserFunctionResult):
     """
     def __init__(self, X: np.ndarray, Y: np.ndarray, dY: np.ndarray, varY: np.ndarray, vardY: np.ndarray) -> None:
         """
-        :param X: Function input, 1 by function input dimension
-        :param Y: Function output(s), 1 by function output dimension
-        :param dY: Gradient(s) corresponding to Y
-        :param varY: Variance estimates corresponding to Y
-        :param vardY: Variance estimates corresponding to dY
+        :param X: Function input, (num_dim, )
+        :param Y: Function output(s), (1, )
+        :param dY: Gradient(s) corresponding to Y (num_dim, )
+        :param varY: Variance estimates corresponding to Y (1, )
+        :param vardY: Variance estimates corresponding to dY (num_dim, 1)
         """
         super().__init__(X, Y, cost=None)
         if dY.ndim != 1:
