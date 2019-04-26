@@ -5,4 +5,5 @@
 from .wolfe_threshold_stopping_condition import WolfeThresholdStoppingCondition  # noqa: F401
 from .wolfe_conditions import WolfeConditions  # noqa: F401
 from .probls_loop_state import ProbLSLoopState  # noqa: F401
-from .probls_user_function_result import ProbLSUserFunctionResult   # noqa: F401
+from .probls_user_function_result import NoisyUserFunctionWithGradientsResult   # noqa: F401
+from .probls_candidate_point_calculator import ProbLSCandidatePointCalculator   # noqa: F401

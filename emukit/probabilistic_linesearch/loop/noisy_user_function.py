@@ -6,7 +6,7 @@ from typing import Tuple, Callable, List
 import numpy as np
 
 from ...core.loop import UserFunction
-from . import ProbLSUserFunctionResult
+from . import NoisyUserFunctionWithGradientsResult
 
 
 import logging
@@ -22,13 +22,13 @@ class NoisyUserFunctionWithGradientsWrapper(UserFunction):
         """
         self.f = f
 
-    def evaluate(self, inputs: np.ndarray) -> List[ProbLSUserFunctionResult]:
+    def evaluate(self, inputs: np.ndarray) -> List[NoisyUserFunctionWithGradientsResult]:
         """
         Evaluates python function by providing it with numpy types and converts the output
-        to a List of ProbLSUserFunctionResult
+        to a List of NoisyUserFunctionWithGradientsResult
 
-        :param inputs: List of function inputs at which to evaluate function
-        :return: List of function results
+        :param inputs: function inputs at which to evaluate function
+        :return: function results
         """
         if inputs.ndim != 2:
             raise ValueError("User function should receive 2d array as an input, "
@@ -61,8 +61,7 @@ class NoisyUserFunctionWithGradientsWrapper(UserFunction):
 
         results = []
         for x, y, dy, vary, vardy in zip(inputs, y_out, dy_out, vary_out, vardy_out):
-            # Todo: might need to flatten some stuff
-            results.append(ProbLSUserFunctionResult(x, y.flatten(), dy, vary, vardy))
+            results.append(NoisyUserFunctionWithGradientsResult(x, y.flatten(), dy, vary, vardy))
         return results
 
 

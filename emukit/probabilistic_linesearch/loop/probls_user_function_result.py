@@ -7,7 +7,7 @@ import numpy as np
 from ...core.loop import UserFunctionResult
 
 
-class ProbLSUserFunctionResult(UserFunctionResult):
+class NoisyUserFunctionWithGradientsResult(UserFunctionResult):
     """
     A class that records the inputs, outputs and meta-data of an evaluation of the noisy user function.
     """
@@ -16,8 +16,8 @@ class ProbLSUserFunctionResult(UserFunctionResult):
         :param X: Function input, (num_dim, )
         :param Y: Function output(s), (1, )
         :param dY: Gradient(s) corresponding to Y (num_dim, )
-        :param varY: Variance estimates corresponding to Y (1, )
-        :param vardY: Variance estimates corresponding to dY (num_dim, 1)
+        :param varY: (Estimated) variance estimates corresponding to Y (1, )
+        :param vardY: (Estimated) variances corresponding to dY (num_dim, )
         """
         super().__init__(X, Y, cost=None)
         if dY.ndim != 1:

@@ -7,7 +7,8 @@ import numpy as np
 
 from ...core.loop import OuterLoop
 from ...probabilistic_linesearch.models import CubicSplineGP
-from . import WolfeThresholdStoppingCondition, ProbLSLoopState, ProbLSUserFunctionResult
+from . import WolfeThresholdStoppingCondition, ProbLSLoopState, NoisyUserFunctionWithGradientsResult, \
+    ProbLSCandidatePointCalculator
 from .noisy_user_function import NoisyUserFunctionWithGradientsWrapper
 from ...probabilistic_linesearch.acquisitions import WolfeProbability
 
@@ -32,8 +33,6 @@ class ProbLineSearch(OuterLoop):
         self.loop_state = loop_state_init
         self.search_direction = search_direction
 
-        self.beta = self._compute_scaling_factor()
-
         self._T = np.array([0.])[:, np.newaxis]
         self._Y = np.array([1.])[:, np.newaxis]
         self._dY = np.array([1.])[:, np.newaxis]
@@ -44,17 +43,9 @@ class ProbLineSearch(OuterLoop):
 
         # Todo: we do not have point calculator yet
         #
-        candidate_point_calculator = SequentialPointCalculator(acquisition)
+        candidate_point_calculator = ProbLSCandidatePointCalculator(acquisition)
 
         super().__init__(candidate_point_calculator, model_updater, loop_state_init)
-
-    def _compute_scaling_factor(self) -> float:
-        """
-        Computes the scale of the integrated Wiener process.
-        :return: The scale of the integrated Wiener process.
-        """
-        beta = 1.
-        return beta
 
     def _compute_scaled_variances(self) -> Tuple[float, float]:
         """
@@ -81,8 +72,8 @@ class ProbLineSearch(OuterLoop):
         # Get winning point
         # Todo: get accepted idx from somewhere
         idx_acc = 1
-        x, y, dy, vary, vardy, pw = self.loop_state.get_entry_by_index(idx_acc)
-        accepted_results = [ProbLSUserFunctionResult(x, y, dy, vary, vardy)]
+        x, y, dy, vary, vardy, pw = self.loop_state.get_result_by_index(idx_acc)
+        accepted_results = [NoisyUserFunctionWithGradientsResult(x, y, dy, vary, vardy)]
         # Todo: get accepted step size from somewhere
         alpha_acc = 1.
 
@@ -98,7 +89,7 @@ class ProbLineSearch(OuterLoop):
             alpha_next = alpha0
             _log.info("Resetting step size.")
 
-        loop_state = ProbLSLoopState(accepted_results, [0.], alpha_next, alpha_stats)
+        loop_state = ProbLSLoopState(accepted_results, -dy, [0.], alpha_next, alpha_stats)
         return alpha_acc, pw, loop_state
 
     def run_loop(self, user_function: NoisyUserFunctionWithGradientsWrapper,
