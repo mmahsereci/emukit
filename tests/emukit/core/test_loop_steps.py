@@ -5,8 +5,8 @@ from emukit.core import ContinuousParameter, ParameterSpace
 from emukit.core.acquisition import Acquisition
 from emukit.core.interfaces import IModel
 from emukit.core.loop import (FixedIntervalUpdater, FixedIterationsStoppingCondition, LoopState, SequentialPointCalculator,
-                              UserFunctionWrapper)
-from emukit.core.optimization import AcquisitionOptimizer
+                              UserFunctionWrapper, RandomSampling)
+from emukit.core.optimization import GradientAcquisitionOptimizer
 
 
 def test_fixed_iteration_stopping_condition():
@@ -73,7 +73,7 @@ def test_every_iteration_model_updater_with_cost():
 def test_sequential_evaluator():
     # SequentialPointCalculator should just return result of the acquisition optimizer
     mock_acquisition = mock.create_autospec(Acquisition)
-    mock_acquisition_optimizer = mock.create_autospec(AcquisitionOptimizer)
+    mock_acquisition_optimizer = mock.create_autospec(GradientAcquisitionOptimizer)
     mock_acquisition_optimizer.optimize.return_value = (np.array([[0.]]), None)
     loop_state_mock = mock.create_autospec(LoopState)
     seq = SequentialPointCalculator(mock_acquisition, mock_acquisition_optimizer)
@@ -90,7 +90,7 @@ def test_sequential_with_context():
     mock_acquisition.has_gradients = False
     mock_acquisition.evaluate = lambda x: np.sum(x**2, axis=1)[:, None]
     space = ParameterSpace([ContinuousParameter('x', 0, 1), ContinuousParameter('y', 0, 1)])
-    acquisition_optimizer = AcquisitionOptimizer(space)
+    acquisition_optimizer = GradientAcquisitionOptimizer(space)
 
     loop_state_mock = mock.create_autospec(LoopState)
     seq = SequentialPointCalculator(mock_acquisition, acquisition_optimizer)
@@ -107,12 +107,30 @@ def test_sequential_with_all_parameters_fixed():
     mock_acquisition.has_gradients = False
     mock_acquisition.evaluate = lambda x: np.sum(x**2, axis=1)[:, None]
     space = ParameterSpace([ContinuousParameter('x', 0, 1), ContinuousParameter('y', 0, 1)])
-    acquisition_optimizer = AcquisitionOptimizer(space)
+    acquisition_optimizer = GradientAcquisitionOptimizer(space)
 
     loop_state_mock = mock.create_autospec(LoopState)
     seq = SequentialPointCalculator(mock_acquisition, acquisition_optimizer)
     next_points = seq.compute_next_points(loop_state_mock, context={'x': 0.25, 'y': 0.25})
     assert np.array_equiv(next_points, np.array([0.25, 0.25]))
+
+
+def test_random_sampling_without_context():
+    space = ParameterSpace([ContinuousParameter('x', 0, 1), ContinuousParameter('y', 0, 1)])
+    rs = RandomSampling(space)
+    loop_state_mock = mock.create_autospec(LoopState)
+    next_points = rs.compute_next_points(loop_state_mock)
+    assert(len(next_points) == 1)
+
+
+def test_random_sampling_with_context():
+    space = ParameterSpace([ContinuousParameter('x', 0, 1), ContinuousParameter('y', 0, 1)])
+    rs = RandomSampling(space)
+    loop_state_mock = mock.create_autospec(LoopState)
+    next_points = rs.compute_next_points(loop_state_mock, context={'x': 0.25})
+    assert(len(next_points) == 1)
+    # Context value should be what we set
+    assert np.isclose(next_points[0, 0], 0.25)
 
 
 def test_user_function_wrapper():
