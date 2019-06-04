@@ -3,126 +3,30 @@
 
 
 import numpy as np
-from typing import Tuple, List
 from scipy.linalg import lu_solve, lu_factor
-from scipy.special import erf
+from typing import Tuple, Union
 
-from ...core.interfaces import IModel
-
-
-class INoisyModelWithGradients:
-    def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Predict mean and variance values for given points
-
-        :param X: array of shape (n_points x n_inputs) of points to run prediction for
-        :return: Tuple of mean and variance which are 2d arrays of shape (n_points x n_outputs)
-        """
-        raise NotImplementedError
-
-    def predict_with_gradients(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Predict mean and variance values for given points
-
-        :param X: array of shape (n_points x n_inputs) of points to run prediction for
-        :return: Tuple of mean and variance of function values at X, both shapes (n_points, 1), as well
-        mean of gradients and their variances at X, both shapes (n_points x n_dim)
-        """
-        raise NotImplementedError
-
-    def set_data(self, X: np.ndarray, Y: np.ndarray, dY: np.ndarray, varY: np.ndarray, vardY: np.ndarray) -> None:
-        """
-        Sets training data in model
-
-        :param X: new points
-        :param Y: noisy function values at new points X
-        :param dY: noisy gradients  at new points X
-        :param varY: variances of Y
-        :param vardY: variances of dY
-        """
-        raise NotImplementedError
-
-    def optimize(self) -> None:
-        """
-        Optimize hyper-parameters of model
-        """
-        raise NotImplementedError
-
-    @property
-    def X(self):
-        raise NotImplementedError
-
-    @property
-    def Y(self):
-        raise NotImplementedError
-
-    @property
-    def dY(self):
-        raise NotImplementedError
-
-    @property
-    def varY(self):
-        raise NotImplementedError
-
-    @property
-    def vardY(self):
-        raise NotImplementedError
+from ..interfaces.models import INoisyModelWithGradients
 
 
-class CubicSplineGP_old(IModel):
+class CubicSplineGP(INoisyModelWithGradients):
     """A once integrated Wiener process (cubic spline Gaussian process)."""
 
-
-    # ==================================
-    # Note: cubic min starts here
-    # Todo: this need to move to acqusition
-    def expected_improvement(self, t):
-        """Computes the expected improvement at position ``t`` under the current
-        GP model.
-
-        Reference "current best" is the observed ``t`` with minimal posterior
-        mean."""
-
-        assert isinstance(t, (float, np.float32, np.float64))
-
-        # Find the observation with minimal posterior mean, if it has not yet been
-        # computed by a previous call to this method
-        if self.min_obs is None:
-            self.min_obs = min(self.mu(tt) for tt in self.ts)
-
-        # Compute posterior mean and variance at t
-        m, v = self.mu(t), self.V(t)
-
-        # Compute the two terms in the formula for EI and return the sum
-        t1 = 0.5 * (self.min_obs - m) * (1 + erf((self.min_obs - m) / np.sqrt(2. * v)))
-        t2 = np.sqrt(0.5 * v / np.pi) * np.exp(-0.5 * (self.min_obs - m) ** 2 / v)
-
-        return t1 + t2
-
-
-class CubicSplineGP(IModel):
-    """A once integrated Wiener process (cubic spline Gaussian process)."""
-
-    def __init__(self, T: np.ndarray, Y: np.ndarray, dY: np.ndarray, sigma2f: float,
-                 sigma2df: float, offset: float = 10.0):
+    def __init__(self, X: np.ndarray, Y: np.ndarray, dY: np.ndarray, varY: float,
+                 vardY: float, offset: float = 10.0):
         """
         All values are in the scaled space.
 
-        :param T: 1D locations of datapoints (num_dat, 1)
-        :param Y: noisy function value at starting point of line search
-        :param dY: noisy gradient at starting point of line search (n_dim, 1)
-        :param sigma2f: The variance of the noisy function values
-        :param sigma2df: The variance of the noisy projected gradients
+        :param X: 1D locations of datapoints (num_dat, 1)
+        :param Y: noisy function value at starting point of line search (num_dat, 1)
+        :param dY: noisy gradient at starting point of line search (num_dat, 1)
+        :param varY: The variance of the noisy function values (num_dat, 1) or positive scalar
+        :param vardY: The variance of the noisy projected gradients, (num_dat, 1) or positive scalar
         :param offset: offset of the kernel to the left in inputs space
         """
 
-        # Todo: we might need an IModel extension that can handle noise
         # kernel parameters
         self._offset = offset
-
-        # value and gradient noise
-        self._sigma2f = sigma2f
-        self._sigma2df = sigma2df
 
         # Kernel matrices
         self._K = None
@@ -136,21 +40,31 @@ class CubicSplineGP(IModel):
         self._LU_piv = None
 
         # Observation counter and arrays to store observations
-        # Todo: why is N zero and not 1?
-        self.N = 0
-        self._T = []
-        self._Y = []
-        self._dY = []
-        # Todo: rename those
-        self._varY = []
-        self._vardY = []
+        self.N = X.shape[0]
+        self._T = X
+        self._Y = Y
+        self._dY = dY
+
+        # Note: this is sigmaf and sigmadf in the paper
+        if isinstance(varY, float):
+            self._varY = np.array([varY])
+        elif isinstance(varY, np.ndarray):
+            self._varY = varY
+        else:
+            raise TypeError
+
+        if isinstance(vardY, float):
+            self._vardY = np.array([vardY])
+        elif isinstance(vardY, np.ndarray):
+            self._vardY = vardY
+        else:
+            raise TypeError
 
         # Switch that remembers whether we are ready for inference (calls to mu,
         # V, etc...). It is set to False when the GP is manipulated (points added,
         # noise level adjusted, reset). After such manipulations, gp.update() has
         # to be called. Remember current best observation of exp. improvement
         self.ready = False
-        self.min_obs = None
 
     @property
     def X(self):
@@ -172,15 +86,84 @@ class CubicSplineGP(IModel):
     def vardY(self):
         return self._vardY
 
+    def optimize(self) -> None:
+        """The line search does not optimize its hyper, but sets them once at the beginning."""
+        pass
+
+    def set_data(self, X: np.ndarray, Y: np.ndarray, dY: np.ndarray, varY: Union[np.ndarray, float],
+                 vardY: Union[np.ndarray, float]) -> None:
+        """
+        Sets training data in model
+
+        :param X: new points (num_points, 1)
+        :param Y: noisy function values at new points X, (num_points, 1)
+        :param dY: noisy gradients  at new points X, (num_points, 1)
+        :param varY: variances of Y, array (num_points, 1), or positive scalar
+        :param vardY: variances of dY, array (num_points, 1) or positive scalar
+        """
+
+        self._T = X
+        self._Y = Y
+        self._dY = dY
+        # Note: this is sigma
+        if isinstance(varY, float):
+            self._varY = np.array([varY])
+        elif isinstance(varY, np.ndarray):
+            self._varY = varY
+        else:
+            raise TypeError
+
+        if isinstance(vardY, float):
+            self._vardY = np.array([vardY])
+        elif isinstance(vardY, np.ndarray):
+            self._vardY = vardY
+        else:
+            raise TypeError
+
+        self.N = X.shape[0]
+
+        # Todo: check later of we need those
+        self.ready = False
+        self._update()
+
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Predict mean and variance values for given points
+        Predict mean and variance if function values for given points
 
-        :param X: array of shape (n_points x n_inputs) of points to run prediction for
-        :return: Tuple of mean and variance which are 2d arrays of shape (n_points x n_outputs)
+        :param X: array of shape (n_points x 1) of points to run prediction for
+        :return: Tuple of mean and variance which are 2d arrays of shape (n_points x 1)
         """
-        # Todo: how does loop use predict? do we need it at all?
-        raise NotImplementedError
+        X = X.squeeze()
+        mean = np.zeros((X.shape[0], 1))
+        variance = np.zeros((X.shape[0], 1))
+        for i, x in enumerate(X):
+            mean[i, :], variance[i, :] = self.m(x), self.V(x)
+
+        return mean, variance
+
+    def _update_kernel_gram(self) -> None:
+        """Computes the kernel matrix jointly for the 1d function values and 1d gradients"""
+        # Todo: since hypers do not change we can append.
+        # Set up the kernel matrices.
+        # Also loop need to go over j<=i only
+
+        N = self.N
+
+        self._K = np.zeros((N, N))
+        self._Kd = np.zeros((N, N))
+        self._dKd = np.zeros((N, N))
+        for i in range(N):
+            for j in range(N):
+                self._K[i, j] = self.k(self._T[i], self._T[j])
+                self._Kd[i, j] = self.kd(self._T[i], self._T[j])
+                self._dKd[i, j] = self.dkd(self._T[i], self._T[j])
+
+        # Put together the Gram matrix
+        self._G = np.zeros((int(2 * N), int(2 * N)))
+        self._G[:N, :N] = self._K + np.diag(self._varY)
+        self._G[N:, N:] = self._dKd + np.diag(self._vardY)
+        self._G[:N, N:] = self._Kd
+        self._G[N:, :N] = self._Kd.T
 
     def _update(self):
         """Set up the Gram matrix and compute its LU decomposition to make the GP
@@ -195,30 +178,7 @@ class CubicSplineGP(IModel):
         if self.ready:
             return
 
-        # Set up the kernel matrices.
-        # Todo: since hypers do not change we can append.
-        # Also loop need to go over j<=i only
-        self._K = np.zeros([self.N, self.N])
-        self._Kd = np.zeros([self.N, self.N])
-        self._dKd = np.zeros([self.N, self.N])
-        for i in range(self.N):
-            for j in range(self.N):
-                self._K[i, j] = self.k(self._T[i], self._T[j])
-                self._Kd[i, j] = self.kd(self._T[i], self._T[j])
-                self._dKd[i, j] = self.dkd(self._T[i], self._T[j])
-
-        # Put together the Gram matrix
-        self._G = np.zeros((int(2 * self.N), int(2 * self.N)))
-        self._G[:self.N, :self.N] = self._K + np.diag(self._varY)
-        self._G[self.N:, self.N:] = self._dKd + np.diag(self._vardY)
-        self._G[:self.N, self.N:] = self._Kd
-        self._G[self.N:, :self.N] = self._Kd.T
-
-        # Todo: remove this when not needed anymore
-        # S_y = np.diag(self._varY)
-        # S_dy = np.diag(self._vardY)
-        # self._G = np.bmat([[self._K + S_y, self._Kd],
-        #                    [self._Kd.T, self._dKd + S_dy]])
+        self._update_kernel_gram()  # update self._K and self._G
 
         # Compute the LU decomposition of G and store it
         self._LU, self._LU_piv = lu_factor(self._G, check_finite=True)
@@ -230,31 +190,15 @@ class CubicSplineGP(IModel):
         # Pre-compute the regression weights used in mu
         self._w = self.solve_G(np.array(self._Y + self._dY))
 
-    def add_single_datapoint(self, t: float, f: float, df: float, vary=0.0, vardy=0.0) -> None:
-        """Add a new observation to the GP.
+    def solve_G(self, b):
+        """
+        Solve Gx=b where G is the Gram matrix of the GP.
 
-        This stores the observation internally, but does NOT yet set up and invert
-        the Gram matrix. Add observations with repeated calls to this method, then
-        call ``gp.update()`` to set up and invert the Gram matrix. Only then you
-        can perform inference (calls to ``gp.mu(t)``, ``gp.V(t)``, etc...)."""
+        """
+        assert self.ready
+        return lu_solve((self._LU, self._LU_piv), b, check_finite=True)
 
-        self.ready = False
-        self.min_obs = None
-
-        # Todo: why is vary, vardy default 0?
-        self.N += 1
-        self._T.append(t)
-        self._Y.append(f)
-        self._dY.append(df)
-        self._varY.append(vary)
-        self._vardY.append(vardy)
-
-        # Todo: can we juts update the GP here?
-        # Note: I added that
-        self._update()
-
-    # =============================================
-    # Note: means start here
+    # === means start here ===
     # TODO: check the return types
     def m(self, t: float) -> float:
         """Posterior mean of f at ``t``."""
@@ -293,8 +237,7 @@ class CubicSplineGP(IModel):
 
         return np.dot(self._w, kvec)[0]
 
-    # =============================================
-    # Note: covariances start here
+    # === covariances start here ===
     def k(self, x, y):
         """
         Kernel function.
@@ -429,15 +372,3 @@ class CubicSplineGP(IModel):
         kvec_b = np.concatenate([dktT, dkdtT])
 
         return dkd0t - np.dot(kvec_a, self.solve_G(kvec_b))
-
-    # =============================================
-    # Note: inference helpers start here
-    def solve_G(self, b):
-        """
-        Solve ``Gx=b`` where ``G`` is the Gram matrix of the GP.
-
-        Uses the internally-stored LU decomposition of ``G`` computed in
-        ``gp.update()``.
-        """
-        assert self.ready
-        return lu_solve((self._LU, self._LU_piv), b, check_finite=True)
