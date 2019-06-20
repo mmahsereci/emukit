@@ -5,12 +5,12 @@
 from typing import Tuple, Union, Callable
 import numpy as np
 
-from ...core.loop import OuterLoop
-from ...probabilistic_linesearch.models import CubicSplineGP
+from emukit.core.loop import OuterLoop
+from ...probLS.models import CubicSplineGP
 from . import WolfeThresholdStoppingCondition, ProbLSLoopState, NoisyUserFunctionWithGradientsResult, \
     ProbLSCandidatePointCalculator
 from .noisy_user_function import NoisyUserFunctionWithGradientsWrapper
-from ...probabilistic_linesearch.acquisitions import WolfeProbability
+from ...probLS.acquisitions import WolfeProbability
 
 
 import logging

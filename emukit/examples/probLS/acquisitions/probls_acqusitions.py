@@ -6,9 +6,9 @@ import numpy as np
 from scipy.stats import norm
 from typing import Tuple
 
-from ...core.acquisition import Acquisition
-from ...probabilistic_linesearch.models import CubicSplineGP
-from ...probabilistic_linesearch.loop import WolfeConditions
+from emukit.core.acquisition import Acquisition
+from ...probLS.models.cubic_spline_gp import CubicSplineGP
+from ...probLS.loop.wolfe_conditions import WolfeConditions
 from .bivariate_normal_integral import compute_bivariate_normal_integral
 
 
@@ -16,19 +16,21 @@ class EIPWAcquisition():
     """Product of EI and PW"""
     pass
 
+
 class NoisyExpectedImprovement(Acquisition):
+    """Expected improvement for noisy data. The difference to the standard expeceted improvoment is that the current
+    best guess is the lowest mean predictor at observed locations instead of the observations itself.
+    """
 
     def __init__(self, model: CubicSplineGP):
         """
-        This acquisition computes for a given input the probability that the Wolfe conditions are fulfilled.
-
         :param model: A Cubic spline Gaussian process model
         """
         self.model = model
 
     def evaluate(self, x: np.ndarray, current_best: float = None) -> np.ndarray:
         """
-        Expected improvement at position x under the current GP model.
+        Expected improvement at position x under the current GP model and noisy observations.
 
         :param x: scalar input location
         :param current_best: value the expected improvement uses to compare against. Default is the current best minimal
@@ -177,8 +179,9 @@ class WolfeProbability(Acquisition):
         # Todo: is dCov0t correct here?
         Vaa = V0 + dVd0 * (c1 * t) ** 2 + V + 2. * c1 * t * (Vd0 - dCov0t) - 2. * Cov0t
         mb = dm - c2 * dm0
-        Vbb = c2 ** 2 * dVd0 - 2 * c2 *
-        + dVd
+
+        # Todo: this is wrong
+        Vbb = c2 ** 2 * dVd0 - 2 * c2 + dVd
 
         # Very small variances can cause numerical problems. Safeguard against
         # this with a deterministic evaluation of the Wolfe conditions.

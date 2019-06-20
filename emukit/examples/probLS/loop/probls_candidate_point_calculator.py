@@ -5,10 +5,10 @@
 import numpy as np
 from typing import Tuple, List
 
-from ...core.loop import CandidatePointCalculator
-from . import ProbLSLoopState
-from ...probabilistic_linesearch.acquisitions import WolfeProbability
-from ...probabilistic_linesearch.models import CubicSplineGP
+from emukit.core.loop import CandidatePointCalculator
+from ...probLS.loop.probls_loop_state import ProbLSLoopState
+from ...probLS.acquisitions.probls_acqusitions import WolfeProbability
+from ...probLS.models.cubic_spline_gp import CubicSplineGP
 
 
 class ProbLSCandidatePointCalculator(CandidatePointCalculator):

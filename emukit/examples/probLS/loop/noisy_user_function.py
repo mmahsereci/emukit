@@ -5,8 +5,8 @@
 from typing import Tuple, Callable, List
 import numpy as np
 
-from ...core.loop import UserFunction
-from . import NoisyUserFunctionWithGradientsResult
+from emukit.core.loop import UserFunction
+from .probls_user_function_result import NoisyUserFunctionWithGradientsResult
 
 
 import logging

@@ -5,8 +5,9 @@
 import numpy as np
 from typing import Tuple, Union
 
-from ...core.loop import StoppingCondition
-from . import WolfeConditions, ProbLSLoopState
+from emukit.core.loop import StoppingCondition
+from .wolfe_conditions import WolfeConditions
+from .probls_loop_state import ProbLSLoopState
 
 
 class WolfeThresholdStoppingCondition(StoppingCondition):

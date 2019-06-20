@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from ...core.loop import UserFunctionResult
+from emukit.core.loop import UserFunctionResult
 
 
 class NoisyUserFunctionWithGradientsResult(UserFunctionResult):

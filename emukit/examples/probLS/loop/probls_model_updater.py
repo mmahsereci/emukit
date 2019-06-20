@@ -4,8 +4,8 @@
 
 from typing import Callable
 
-from ...core.loop import LoopState, ModelUpdater
-from ...core.interfaces import IModel
+from emukit.core.loop import LoopState, ModelUpdater
+from emukit.core.interfaces import IModel
 
 
 class NoisyModelWithGradientsDataOnlyUpdater(ModelUpdater):

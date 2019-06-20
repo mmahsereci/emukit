@@ -5,8 +5,8 @@
 import numpy as np
 from typing import List, Tuple
 
-from . import NoisyUserFunctionWithGradientsResult
-from ...core.loop import LoopState
+from .noisy_user_function import NoisyUserFunctionWithGradientsResult
+from emukit.core.loop import LoopState
 
 
 class ProbLSLoopState(LoopState):
