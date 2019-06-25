@@ -7,6 +7,8 @@ from typing import Tuple, Union
 
 
 class INoisyModelWithGradients:
+    """This is a model that model function values and gradients. It also assumes measurements of both function values
+     and gradients. Furthermore, it assumes that the measurement noise of function values and gradients is provided."""
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Predict mean and variance values for given points

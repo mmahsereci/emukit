@@ -98,7 +98,7 @@ class ProbLSCandidatePointCalculator(CandidatePointCalculator):
         # Todo: asserts are bad in code
         assert t not in self.model.X  # at the observations, polynomial is ambiguous
 
-        dmu, d2, d3 = self.model.dm(t), self.model.d2m(t), self.model.d3m(t)
+        dmu, d2, d3 = self.model.d1m(t), self.model.d2m(t), self.model.d3m(t)
         a = d3 / 6.0
         b = 0.5 * d2 - 3 * a * t
         c = dmu - 3. * a * t ** 2 - 2. * b * t
@@ -114,7 +114,7 @@ class ProbLSCandidatePointCalculator(CandidatePointCalculator):
         # Todo: asserts are bad in code
         assert t not in self.model.X  # at the observations, polynomial is ambiguous
 
-        d1, d2, d3 = self.model.dm(t), self.model.d2m(t), self.model.d3m(t)
+        d1, d2, d3 = self.model.d1m(t), self.model.d2m(t), self.model.d3m(t)
         a = .5 * d3
         b = d2 - d3 * t
         c = d1 - d2 * t + 0.5 * d3 * t ** 2

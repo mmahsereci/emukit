@@ -64,7 +64,7 @@ class NoisyExpectedImprovement(Acquisition):
 
 class WolfeProbability(Acquisition):
 
-    def __init__(self, model: CubicSplineGP, wolfe_conditions: WolfeConditions = None):
+    def __init__(self, model: CubicSplineGP, wolfe_conditions: WolfeConditions):
         """
         This acquisition computes for a given input the probability that the Wolfe conditions are fulfilled.
 
@@ -72,10 +72,7 @@ class WolfeProbability(Acquisition):
         :param wolfe_conditions: The probabilistic Wolfe conditions
         """
         self.model = model
-        if WolfeConditions is None:
-            self._wolfe_conditions = WolfeConditions()
-        else:
-            self._wolfe_conditions = wolfe_conditions
+        self._wolfe_conditions = wolfe_conditions
 
     @property
     def wolfe_condition(self) -> WolfeConditions:
@@ -108,94 +105,42 @@ class WolfeProbability(Acquisition):
         c1 = self.wolfe_condition.c1
         c2 = self.wolfe_condition.c2
 
-        m0 = self.model.m(0.)
-        dm0 = self.model.dm(0.)
-        V0 = self.model.V(0.)
+        dm0 = self.model.d1m(0.)
         Vd0 = self.model.Vd(0.)
         dVd0 = self.model.dVd(0.)
 
-        mt = self.model.m(t)
-        dmt = self.model.dm(t)
-        Vt = self.model.V(t)
-        Vdt = self.model.Vd(t)
-        dVdt = self.model.dVd(t)
+        Vd0ft = self.model.Vd0f(t)
+        Vd0dft = self.model.Vd0df(t)
 
         # marginal for Armijo condition
-        ma = m0 - mt + c1 * t * dm0
-        Vaa = V0 + (c1 * t) ** 2 * dVd0 + Vt + 2 * (c1 * t * (Vd0 - Vd0f(t)) - V0f(t))
+        ma = self.model.m(0.) - self.model.m(t) + c1 * t * dm0
+        Vaa = self.model.V(0.) + (c1 * t) ** 2 * dVd0 + self.model.V(t) + 2 * (c1 * t * (Vd0 - Vd0ft)
+                                                                               - self.model.V0f(t))
 
         # marginal for curvature condition
-        mb = dmt - c2 * dm0
-        Vbb = c2 ^ 2 * dVd0 - 2 * c2 * Vd0df(t) + dVdt
+        mb = self.model.d1m(t) - c2 * dm0
+        Vbb = c2 ** 2 * dVd0 - 2 * c2 * Vd0dft + self.model.dVd(t)
 
         # covariance between conditions
-        Vab = -c2 * (Vd0 + c1 * t * dVd0) + V0df(t) + c2 * Vd0f(t) + c1 * t * Vd0df(t) - Vd(t)
+        Vab = - c2 * (Vd0 + c1 * t * dVd0) + c2 * Vd0ft + self.model.V0df(t) + c1 * t * Vd0dft - self.model.Vd(t)
 
-        # deterministic evaluations
+        # very small variance -> deterministic evaluations
         if (Vaa < 1e-9) and (Vbb < 1e-9):
-            # Todo: is that bool or float?
-            pwolfe = (ma >= 0) * (mb >= 0)
+            pwolfe = int((ma >= 0) * (mb >= 0))
             return pwolfe
 
-        # joint probability
+        # zero or negative variances (maybe sth went wrong?)
+        if (Vaa <= 0) or (Vbb <= 0):
+            return 0
+
+        # joint probability (everything is alright)
         rho = Vab / np.sqrt(Vaa * Vbb)
-        if Vaa <= 0. or Vbb <= 0.:
-            pwolfe = 0
-            return pwolfe
-        x_low = -ma / np.sqrt(Vaa)
-        x_up  = np.inf
-        y_low = -mb / np.sqrt(Vbb)
-        y_up = (2 * c2 * (abs(dm0) + 2 * np.sqrt(dVd0)) - mb) / np.sqrt(Vbb)
-        pwolfe = compute_bivariate_normal_integral(x_low, x_up, y_low, y_up, rho)
-        return pwolfe
+        rho = np.clip(rho, -1, 1)  # numerical stability
 
-    def _evaluate_single_point2(self, t: float) -> float:
-        """
-        Evaluates the acquisition function.
-        :param t: point at which to calculate acquisition function values
-        :return: acquisition function value at point t
-        """
+        low_a = - ma / np.sqrt(Vaa)
+        up_a = np.inf
+        low_b = - mb / np.sqrt(Vbb)
+        up_b = (2 * c2 * (abs(dm0) + 2 * np.sqrt(dVd0)) - mb) / np.sqrt(Vbb)
 
-        # Compute mean and covariance matrix of the two Wolfe quantities a and b
-        # (equations (11) to (13) in [1]).
-        c1 = self.wolfe_condition.c1
-        c2 = self.wolfe_condition.c2
-
-        m0 = self.model.m(0.)
-        dm0 = self.model.dm(0.)
-        V0 = self.model.V(0.)
-        Vd0 = self.model.Vd(0.)
-        dVd0 = self.model.dVd(0.)
-
-        mu = self.model.m(t)
-        dm = self.model.dm(t)
-        V = self.model.V(t)
-        dVd = self.model.dVd(t)
-        Cov0t = self.model.Cov_0(t)
-        dCov0t = self.model.dCov_0(t)
-        Covd0t = self.model.Covd_0(t)
-
-        ma = m0 - mu + c1 * t * dm0
-        # Todo: is dCov0t correct here?
-        Vaa = V0 + dVd0 * (c1 * t) ** 2 + V + 2. * c1 * t * (Vd0 - dCov0t) - 2. * Cov0t
-        mb = dm - c2 * dm0
-
-        # Todo: this is wrong
-        Vbb = c2 ** 2 * dVd0 - 2 * c2 + dVd
-
-        # Very small variances can cause numerical problems. Safeguard against
-        # this with a deterministic evaluation of the Wolfe conditions.
-        if Vaa < 1e-9 or Vbb < 1e-9:
-            pwolfe = 1. if ma >= 0. and mb >= 0. else 0.
-            return pwolfe
-
-        Vab = Covd0t + c1 * t * self.model.dCovd_0(t) - self.model.Vd(t)
-
-        # Compute correlation factor and integration bounds for adjusted p_Wolfe
-        # and return the result of the bivariate normal integral.
-        rho = Vab / np.sqrt(Vaa * Vbb)
-        al = -ma / np.sqrt(Vaa)
-        bl = (self.df_lo - mb) / np.sqrt(Vbb)
-        bu = (self.df_hi - mb) / np.sqrt(Vbb)
-        pwolfe = compute_bivariate_normal_integral(al, np.inf, bl, np.inf, rho)
+        pwolfe = compute_bivariate_normal_integral(low_a, up_a, low_b, up_b, rho)
         return pwolfe

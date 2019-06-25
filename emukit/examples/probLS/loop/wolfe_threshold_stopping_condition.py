@@ -21,9 +21,10 @@ class WolfeThresholdStoppingCondition(StoppingCondition):
     def should_stop(self, loop_state: ProbLSLoopState) -> Tuple[bool, Union[int, None]]:
         """
         :param loop_state: Object that contains current state of the line search loop
-        :return: True if point point that has Wolfe probability larger than threshold cw, index of which evaluation has
-        been accepted (None of no point is accepted).
+        :return: True if point point that has Wolfe probability larger than threshold cw; index of which evaluation has
+        been accepted (None if no point is accepted).
         """
+        # Todo: there is not fixed iteration here? how to handle it?
         num_evals = loop_state.wolfe_probabilities.shape[0]
         wolfe_idx = np.where(loop_state.wolfe_probabilities > self.wolfe_conditions.cw)[0]
         wolfe_set = loop_state.wolfe_probabilities[wolfe_idx]

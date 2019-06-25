@@ -3,7 +3,7 @@
 
 
 import numpy as np
-from scipy.linalg import lu_solve, lu_factor, solve_triangular
+from scipy.linalg import solve_triangular
 from typing import Tuple, Union
 
 from ..interfaces.models import INoisyModelWithGradients
@@ -112,13 +112,22 @@ class CubicSplineGP(INoisyModelWithGradients):
         :param X: array of shape (n_points x 1) of points to run prediction for
         :return: Tuple of mean and variance which are 2d arrays of shape (n_points x 1)
         """
-        # Todo: this predicts the marginal of function values. Do we also need derivatives?
         means = np.zeros(X.shape)
         variances = np.zeros(X.shape)
         for i in range(X.shape[0]):
             means[i, 0], variances[i, :] = self.m(X[i, 0]), self.V(X[i, 0])
 
         return means, variances
+
+    def predict_with_gradients(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Predict mean and variance values for given points
+
+        :param X: array of shape (n_points x n_inputs) of points to run prediction for
+        :return: Tuple of mean and variance of function values at X, both shapes (n_points, 1), as well
+        mean of gradients and their variances at X, both shapes (n_points x n_dim)
+        """
+        raise NotImplementedError
 
     def _update(self):
         """
@@ -132,9 +141,9 @@ class CubicSplineGP(INoisyModelWithGradients):
         self._Kd = np.zeros((N, N))
         self._dKd = np.zeros((N, N))
         for i in range(N):
-            self._K[i, :] = self.k(self._T[i], self._T)
-            self._Kd[i, :] = self.kd(self._T[i], self._T)
-            self._dKd[i, :] = self.dkd(self._T[i], self._T)
+            self._K[i, :] = self.k(self._T[i, 0], self._T)
+            self._Kd[i, :] = self.kd(self._T[i, 0], self._T)
+            self._dKd[i, :] = self.dkd(self._T[i, 0], self._T)
         self._K = 0.5 * (self._K + self._K.T)
         self._dKd = 0.5 * (self._dKd + self._dKd.T)
 
@@ -148,9 +157,16 @@ class CubicSplineGP(INoisyModelWithGradients):
 
         # Cholesky and weights
         self._L = np.linalg.cholesky(self._G)
+        self._A = self._solve_gram(np.vstack([self._Y, self._dY]).squeeze())  # shape (2 N,)
 
-        tmp = solve_triangular(self._L, np.vstack([self._Y, self._dY])[:, 0], lower=True)
-        self._A = solve_triangular(self._L.T, tmp, lower=False)  # shape (2 N,)
+    def _solve_gram(self, b: np.ndarray) -> np.ndarray:
+        """
+        Solves linear system G x = b by using the precomputed Cholesky of G
+        :param b: right side of linear equation (vector)
+        :return: solution x of linear system
+        """
+        tmp = solve_triangular(self._L, b, lower=True)
+        return solve_triangular(self._L.T, tmp, lower=False)  # shape (2 N,)
 
     # === posterior means start here ===
     def m(self, t: float) -> float:
@@ -159,17 +175,16 @@ class CubicSplineGP(INoisyModelWithGradients):
         :param t: location where mean is evaluated
         :return: the posterior mean at t
         """
-        kvec = np.hstack([self.k(t, self._T), self.kd(t, self._T)])[:, 0]
+        kvec = np.hstack([self.k(t, self._T), self.kd(t, self._T)]).squeeze()
         return (kvec * self._A).sum()
 
-    def dm(self, t: float) -> float:
+    def d1m(self, t: float) -> float:
         """
         First derivative of posterior mean
         :param t: location where mean is evaluated
         :return: First derivative of posterior mean at t
         """
-        """Evaluate first derivative of the posterior mean of df at ``t``."""
-        kvec = np.hstack([self.dk(t, self._T), self.dkd(t, self._T)])[:, 0]
+        kvec = np.hstack([self.dk(t, self._T), self.dkd(t, self._T)]).squeeze()
         return (kvec * self._A).sum()
 
     def d2m(self, t: float) -> float:
@@ -178,8 +193,7 @@ class CubicSplineGP(INoisyModelWithGradients):
         :param t: location where mean is evaluated
         :return: Second derivative of posterior mean at t
         """
-        """Evaluate 2nd derivative of the posterior mean of f at ``t``."""
-        kvec = np.hstack([self.ddk(t, self._T), self.ddkd(t, self._T)])[:, 0]
+        kvec = np.hstack([self.ddk(t, self._T), self.ddkd(t, self._T)]).squeeze()
         return (kvec * self._A).sum()
 
     def d3m(self, t: float) -> float:
@@ -188,7 +202,7 @@ class CubicSplineGP(INoisyModelWithGradients):
         :param t: location where mean is evaluated
         :return: Third derivative of posterior mean at t
         """
-        kvec = np.hstack([self.dddk(t, self._T), np.zeros((1, self.N))])[:, 0]
+        kvec = np.hstack([self.dddk(t, self._T), np.zeros((1, self.N))]).squeeze()
         return (kvec * self._A).sum()
 
     # === prior covariances start here ===
@@ -200,7 +214,7 @@ class CubicSplineGP(INoisyModelWithGradients):
         :return: kernel matrix k(a, b), array with shape (1, num_points), or float
         """
         ab_min = self._offset + np.minimum(a, b)
-        result = ab_min ** 3 / 3.0 + 0.5 * np.abs(a - b) * ab_min ** 2
+        result = ab_min ** 3 / 3.0 + 0.5 * np.absolute(a - b) * ab_min ** 2
         return result.T
 
     def kd(self, a: float, b: Union[np.ndarray, np.float]) -> Union[np.ndarray, np.float]:
@@ -212,7 +226,7 @@ class CubicSplineGP(INoisyModelWithGradients):
         """
         aa = a + self._offset
         bb = b + self._offset
-        result = np.where(a < b, 0.5 * aa ** 2, aa * bb - 0.5 * bb ** 2)
+        result = np.where(b > a, 0.5 * aa ** 2, aa * bb - 0.5 * bb ** 2)
         return result.T
 
     def dk(self, a: float, b: Union[np.ndarray, np.float]) -> Union[np.ndarray, np.float]:
@@ -266,97 +280,82 @@ class CubicSplineGP(INoisyModelWithGradients):
         return np.where(a <= b, 1., 0.).T
 
     # === posterior covariances start here ===
-    def V(self, t: float):
-        """Posterior variance of f at ``t``."""
-        # Compute the needed k vector
-        assert self.ready
-        T = np.array(self._T)
-        kvec = np.concatenate([self.k(t, T), self.kd(t, T)])
-        ktt = self.k(t, t)
-
-        return ktt - np.dot(kvec, self.solve_G(kvec))
-
-    def Vd(self, t: float):
-        """Posterior co-variance of f and df at ``t``."""
-        assert self.ready
-        T = np.array(self._T)
-        ktT = self.k(t, T)
-        kdtT = self.kd(t, T)
-        dktT = self.kd(T, t)
-        dkdtT = self.dkd(t, T)
-        kdtt = self.kd(t, t)
-        kvec_a = np.concatenate([ktT, kdtT])
-        kvec_b = np.concatenate([dktT, dkdtT])
-
-        return kdtt - np.dot(kvec_a, self.solve_G(kvec_b))
-
-    def dVd(self, t: float):
-        """Posterior variance of df at ``t``"""
-        assert self.ready
-        T = np.array(self._T)
-        dkdtt = self.dkd(t, t)
-        dktT = self.kd(T, t)
-        dkdtT = self.dkd(t, T)
-        kvec = np.concatenate([dktT, dkdtT])
-
-        return dkdtt - np.dot(kvec, self.solve_G(kvec))
-
-    def Cov_0(self, t: float) -> float:
+    def V(self, t: float) -> float:
         """
-        :return: co-variance cov(f(0), f(t)).
+        posterior variance of function value at t
+        :param t: location where variance is computed
+        :return: posterior variance
         """
-        assert self.ready
-        T = np.array(self._T)
-        k0t = self.k(0., t)
-        k0T = self.k(0., T)
-        kd0T = self.kd(0., T)
-        ktT = self.k(t, T)
-        kdtT = self.kd(t, T)
-        kvec_a = np.concatenate([k0T, kd0T])
-        kvec_b = np.concatenate([ktT, kdtT])
+        kvec = np.hstack([self.k(t, self._T), self.kd(t, self._T)]).squeeze()
+        var_reduction = (kvec * self._solve_gram(kvec)).sum()
+        return self.k(t, t) - var_reduction
 
-        return k0t - np.dot(kvec_a, self.solve_G(kvec_b))
+    def Vd(self, t: float) -> float:
+        """
+        posterior covariance between function value and gradient at t
+        :param t: location where covariance is computed
+        :return: posterior covariance
+        """
+        kvec_left = np.hstack([self.k(t, self._T), self.kd(t, self._T)]).squeeze()
+        kvec_right = np.hstack([self.dk(t, self._T), self.dkd(t, self._T)]).squeeze()
+        cov_reduction = (kvec_left * self._solve_gram(kvec_right)).sum()
+        return self.kd(t, t) - cov_reduction
 
-    def Covd_0(self, t: float):
-        """Posterior co-variance of f at 0. and df at ``t``."""
+    def dVd(self, t: float) -> float:
+        """
+        posterior variance of gradient at t
+        :param t: location where variance is computed
+        :return: posterior variance
+        """
+        kvec_left = np.hstack([self.dk(t, self._T), self.dkd(t, self._T)]).squeeze()
+        kvec_right = np.hstack([self.dk(t, self._T), self.dkd(t, self._T)]).squeeze()
+        var_reduction = (kvec_left * self._solve_gram(kvec_right)).sum()
+        return self.dkd(t, t) - var_reduction
+
+    def V0f(self, t: float) -> float:
+        """
+        posterior covariance of function value at t=0 and t
+        :param t: location where covariance is computed
+        :return: posterior covariance
+        """
+        kvec_left = np.hstack([self.k(0., self._T), self.kd(0., self._T)]).squeeze()
+        kvec_right = np.hstack([self.k(t, self._T), self.kd(t, self._T)]).squeeze()
+        cov_reduction = (kvec_left * self._solve_gram(kvec_right)).sum()
+        return self.k(0, t) - cov_reduction
+
+    def Vd0f(self, t: float) -> float:
+        """
+        posterior covariance of gradient at t=0 and function value t
+        :param t: location where covariance is computed
+        :return: posterior covariance
+        """
+        # Todo: What does this man?
         # !!! I changed this in line_search new, Covd_0 <-> dCov_0
-        assert self.ready
-        T = np.array(self._T)
-        kd0t = self.kd(0., t)
-        k0T = self.k(0., T)
-        kd0T = self.kd(0., T)
-        dktT = self.kd(T, t)
-        dkdtT = self.dkd(t, T)
-        kvec_a = np.concatenate([k0T, kd0T])
-        kvec_b = np.concatenate([dktT, dkdtT])
+        kvec_left = np.hstack([self.dk(0., self._T), self.dkd(0., self._T)]).squeeze()
+        kvec_right = np.hstack([self.k(t, self._T), self.kd(t, self._T)]).squeeze()
+        cov_reduction = (kvec_left * self._solve_gram(kvec_right)).sum()
+        return self.dk(0, t) - cov_reduction
 
-        return kd0t - np.dot(kvec_a, self.solve_G(kvec_b))
-
-    def dCov_0(self, t: float):
-        """Posterior co-variance of df at 0. and f at ``t``."""
+    def V0df(self, t: float) -> float:
+        """
+        posterior covariance of function value at t=0 and gradient t
+        :param t: location where covariance is computed
+        :return: posterior covariance
+        """
+        # Todo: What does this man?
         # !!! I changed this in line_search new, Covd_0 <-> dCov_0
-        assert self.ready
-        T = np.array(self._T)
-        dk0t = self.kd(t, 0.)
-        dk0T = self.kd(T, 0.)
-        dkd0T = self.dkd(0., T)
-        ktT = self.k(t, T)
-        kdtT = self.kd(t, T)
-        kvec_a = np.concatenate([dk0T, dkd0T])
-        kvec_b = np.concatenate([ktT, kdtT])
+        kvec_left = np.hstack([self.k(0., self._T), self.kd(0., self._T)]).squeeze()
+        kvec_right = np.hstack([self.dk(t, self._T), self.dkd(t, self._T)]).squeeze()
+        cov_reduction = (kvec_left * self._solve_gram(kvec_right)).sum()
+        return self.kd(0, t) - cov_reduction
 
-        return dk0t - np.dot(kvec_a, self.solve_G(kvec_b))
-
-    def dCovd_0(self, t: float):
-        """Posterior co-variance of df at 0. and ``t``."""
-        assert self.ready
-        T = np.array(self._T)
-        dkd0t = self.dkd(0., t)
-        dk0T = self.kd(T, 0.)
-        dkd0T = self.dkd(0., T)
-        dktT = self.kd(T, t)
-        dkdtT = self.dkd(t, T)
-        kvec_a = np.concatenate([dk0T, dkd0T])
-        kvec_b = np.concatenate([dktT, dkdtT])
-
-        return dkd0t - np.dot(kvec_a, self.solve_G(kvec_b))
+    def Vd0df(self, t: float) -> float:
+        """
+        posterior covariance gradients at t=0 and gradient t
+        :param t: location where covariance is computed
+        :return: posterior covariance
+        """
+        kvec_left = np.hstack([self.dk(0., self._T), self.dkd(0., self._T)]).squeeze()
+        kvec_right = np.hstack([self.dk(t, self._T), self.dkd(t, self._T)]).squeeze()
+        cov_reduction = (kvec_left * self._solve_gram(kvec_right)).sum()
+        return self.dkd(0, t) - cov_reduction
