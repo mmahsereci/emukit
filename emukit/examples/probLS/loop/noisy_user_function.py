@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-from typing import Tuple, Callable, List
+import abc
 import numpy as np
+from typing import Tuple, Callable, List
 
-from emukit.core.loop import UserFunction
 from .probls_user_function_result import NoisyUserFunctionWithGradientsResult
 
 
@@ -13,7 +13,14 @@ import logging
 _log = logging.getLogger(__name__)
 
 
-class NoisyUserFunctionWithGradientsWrapper(UserFunction):
+class NoisyUserFunctionWithGradients(abc.ABC):
+    """ The user supplied function is interrogated as part of the outer loop """
+    @abc.abstractmethod
+    def evaluate(self, X: np.ndarray) -> List[NoisyUserFunctionWithGradientsResult]:
+        pass
+
+
+class NoisyUserFunctionWithGradientsWrapper(NoisyUserFunctionWithGradients):
     """ Wraps a user-provided python function. """
     def __init__(self, f: Callable):
         """
@@ -61,7 +68,12 @@ class NoisyUserFunctionWithGradientsWrapper(UserFunction):
 
         results = []
         for x, y, dy, vary, vardy in zip(inputs, y_out, dy_out, vary_out, vardy_out):
+            # Todo: check this
             results.append(NoisyUserFunctionWithGradientsResult(x, y.flatten(), dy, vary, vardy))
         return results
 
 
+class NoisyUserFunctionWithGradientsMLPWrapper(NoisyUserFunctionWithGradients):
+    def evaluate(self, X: np.ndarray) -> List[NoisyUserFunctionWithGradientsResult]:
+        # Todo: wrap an MLP in here
+        pass

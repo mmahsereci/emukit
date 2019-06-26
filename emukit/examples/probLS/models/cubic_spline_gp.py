@@ -6,10 +6,10 @@ import numpy as np
 from scipy.linalg import solve_triangular
 from typing import Tuple, Union
 
-from ..interfaces.models import INoisyModelWithGradients
+from ..interfaces.models import IModelWithObservedGradientsAndNoise
 
 
-class CubicSplineGP(INoisyModelWithGradients):
+class CubicSplineGP(IModelWithObservedGradientsAndNoise):
     """A once integrated Wiener process (cubic spline Gaussian process)."""
 
     def __init__(self, X: np.ndarray, Y: np.ndarray, dY: np.ndarray, varY: float, vardY: float, offset: float = 10.0):

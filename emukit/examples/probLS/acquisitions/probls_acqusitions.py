@@ -8,23 +8,19 @@ from typing import Tuple
 
 from emukit.core.acquisition import Acquisition
 from ...probLS.models.cubic_spline_gp import CubicSplineGP
+from ...probLS.interfaces.models import IModelWithObservedGradientsAndNoise
 from ...probLS.loop.wolfe_conditions import WolfeConditions
 from .bivariate_normal_integral import compute_bivariate_normal_integral
 
 
-class EIPWAcquisition():
-    """Product of EI and PW"""
-    pass
-
-
 class NoisyExpectedImprovement(Acquisition):
-    """Expected improvement for noisy data. The difference to the standard expeceted improvoment is that the current
+    """Expected improvement for noisy data. The difference to the standard expected improvement is that the current
     best guess is the lowest mean predictor at observed locations instead of the observations itself.
     """
 
-    def __init__(self, model: CubicSplineGP):
+    def __init__(self, model: IModelWithObservedGradientsAndNoise):
         """
-        :param model: A Cubic spline Gaussian process model
+        :param model: The mode; an instance of IModelWithObservedGradientsAndNoise
         """
         self.model = model
 
@@ -32,25 +28,23 @@ class NoisyExpectedImprovement(Acquisition):
         """
         Expected improvement at position x under the current GP model and noisy observations.
 
-        :param x: scalar input location
+        :param x: scalar input location, shape (num_dat, 1)
         :param current_best: value the expected improvement uses to compare against. Default is the current best minimal
-        posterior mean at observed locations x.
+        posterior mean at observed locations X.
         :return: expected improvement at x
         """
 
         if current_best is None:
-            current_best = min(self.model.m(tt) for tt in self.model.X.squeeze())
+            # minimal value of GP mean at observed locations
+            mean_obs, _ = self.model.predict(self.model.X)
+            current_best = mean_obs.min()
 
-        # mean, variance = self.model.m(x), self.model.V(x)
         mean, variance = self.model.predict(x)
+        variance = np.clip(variance, 0, np.inf)
         standard_deviation = np.sqrt(variance)
 
         z = (current_best - mean) / standard_deviation
-        pdf = norm.pdf(z)
-        cdf = norm.cdf(z)
-
-        improvement = standard_deviation * (z * cdf + pdf)
-
+        improvement = standard_deviation * (z * norm.cdf(z) + norm.pdf(z))
         return improvement
 
     def evaluate_with_gradients(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:

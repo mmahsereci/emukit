@@ -15,7 +15,8 @@ class ProbLSLoopState(LoopState):
     """
 
     def __init__(self, initial_results: List[NoisyUserFunctionWithGradientsResult], search_direction: np.ndarray,
-                 initial_wolfe_probabilities: List[float], alpha0: float = 1e-4, alpha_stats: float = None) -> None:
+                 #initial_wolfe_probabilities: List[float],
+                 alpha0: float = 1e-4, alpha_stats: float = None) -> None:
         """
         :param initial_results: The function results from previous function evaluations
         :param initial_wolfe_probabilities: the wolfe probabilities corresponding to the initial results
@@ -24,7 +25,8 @@ class ProbLSLoopState(LoopState):
         :param alpha_stats: running average of accepted step sizes (defaults to alpha0)
         """
         super().__init__(initial_results)
-        self._wolfe_probabilities = initial_wolfe_probabilities
+        # Todo: wolfe probabilities are not static, they change with the model!
+        #self._wolfe_probabilities = initial_wolfe_probabilities
         self.search_direction = search_direction
         self._alpha0 = alpha0
         self.extrapolation_factor = 1.
@@ -53,16 +55,16 @@ class ProbLSLoopState(LoopState):
         """
         return np.array([result.vardY for result in self.results])
 
-    @property
-    def wolfe_probabilities(self):
-        """
-        :return: The Wolfe probabilities in a 2d array: number of points by output dimensions.
-        """
-        return np.array(self._wolfe_probabilities)
+    #@property
+    #def wolfe_probabilities(self):
+    #    """
+    #    :return: The Wolfe probabilities in a 2d array: number of points by output dimensions.
+    #    """
+    #    return np.array(self._wolfe_probabilities)
 
-    @wolfe_probabilities.setter
-    def wolfe_probabilities(self, values: np.ndarray) -> None:
-        self._wolfe_probabilities = values
+    #@wolfe_probabilities.setter
+    #def wolfe_probabilities(self, values: np.ndarray) -> None:
+    #    self._wolfe_probabilities = values
 
     @property
     def alpha_stats(self):
