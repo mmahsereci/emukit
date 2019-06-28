@@ -6,11 +6,15 @@ from typing import Tuple, Union, Callable
 import numpy as np
 
 from emukit.core.loop import OuterLoop
-from ...probLS.models import CubicSplineGP
-from . import WolfeThresholdStoppingCondition, ProbLSLoopState, NoisyUserFunctionWithGradientsResult, \
-    ProbLSCandidatePointCalculator
-from .noisy_user_function import NoisyUserFunctionWithGradientsWrapper
-from ...probLS.acquisitions import WolfeProbability
+from emukit.core.acquisition.acquisition import Product
+from emukit.core.loop.stopping_conditions import FixedIterationsStoppingCondition
+from ...probLS.models.cubic_spline_gp import CubicSplineGP
+from ...probLS.loop.probls_loop_state import ProbLSLoopState, get_next_loop_state
+from ...probLS.acquisitions.probls_acqusitions import WolfeProbability, NoisyExpectedImprovement
+from ...probLS.loop.probls_wolfe_conditions import WolfeConditions
+from ...probLS.loop.probls_candidate_point_calculator import ProbLSCandidatePointCalculator
+from ...probLS.loop.probls_wolfe_threshold_stopping_condition import WolfeThresholdStoppingCondition
+from ...probLS.loop.noisy_user_function import NoisyUserFunctionWithGradientsWrapper
 
 
 import logging
@@ -20,105 +24,107 @@ _log = logging.getLogger(__name__)
 class ProbLineSearch(OuterLoop):
     """A once integrated Wiener process (cubic spline Gaussian process)."""
 
-    def __init__(self, search_direction: np.ndarray, model: CubicSplineGP, loop_state_init: ProbLSLoopState,
-                 acquisition: WolfeProbability = None):
+    def __init__(self, loop_state_init: ProbLSLoopState):
         """
-        The loop for vanilla Bayesian Quadrature
+        The loop for the probabilistic linea search (a bit over-engineered, but it is fun)
 
-        :param search_direction: The search direction (negative noisy gradient) (num_dim, )
         :param model: the cubic spline Gaussian Process model
         :param loop_state_init: The initial state of the loop.
         """
-        self.model = model
+        self.model = CubicSplineGP(X=loop_state_init.X_transformed,
+                                   Y=loop_state_init.Y_transformed,
+                                   dY=loop_state_init.dY_transformed,
+                                   varY=loop_state_init.sigmaf ** 2,
+                                   vardY=loop_state_init.sigmadf ** 2)
+
+        pw = WolfeProbability(self.model, WolfeConditions())
+        nei = NoisyExpectedImprovement(self.model)
+        self.acquisition = Product(pw, nei)
+
+        candidate_point_calculator = ProbLSCandidatePointCalculator(acquisition=self.acquisition)
+
+        # todo: model updater??
+        #super().__init__(candidate_point_calculator, model_updater, loop_state_init)
+
         self.loop_state = loop_state_init
-        self.search_direction = search_direction
+        self.candidate_point_calculator = candidate_point_calculator
 
-        self._T = np.array([0.])[:, np.newaxis]
-        self._Y = np.array([1.])[:, np.newaxis]
-        self._dY = np.array([1.])[:, np.newaxis]
+        self.stopping_condition_pw = WolfeThresholdStoppingCondition(self.acquisition.acquisition_1.wolfe_condition)
+        self.stopping_condition_fix = FixedIterationsStoppingCondition(i_max=6)
 
-        if acquisition is None:
-            # Todo: change this to EI time WP, also in init: Union[PW, EI-PW]
-            acquisition = WolfeProbability(model)
-
-        # Todo: we do not have point calculator yet
-        #
-        candidate_point_calculator = ProbLSCandidatePointCalculator(acquisition)
-
-        super().__init__(candidate_point_calculator, model_updater, loop_state_init)
-
-    def _compute_scaled_variances(self) -> Tuple[float, float]:
-        """
-        Computes the scaled variances of the noisy function values and projected gradients
-        :return: scaled variance of function values, scaled variance of projected gradient
-        """
-        np.inner(self.search_direction)
-        sigma_f = 0.
-        sigma_df = 0.
-        return sigma_f, sigma_df
-
-    def _update_average_statistics(self):
-        """Updates alpha_stats"""
-        pass
-
-    def get_result(self, alpha_ext: float = 1.3, theta_reset: float = 100.) -> Tuple[float, float, ProbLSLoopState]:
-        """
-        :param alpha_ext: extrapolation parameter (default 1.3). should be in interval [1.1, 1.3]
-        :param theta_reset: safeguard for numerical stability. Defined maximal variability of each step
-        :return: accepted step size, Wolfe probability of accepted step, loop state with winning evaluation
-        """
-        alpha0 = self.loop_state.alpha0
-
-        # Get winning point
-        # Todo: get accepted idx from somewhere
-        idx_acc = 1
-        x, y, dy, vary, vardy, pw = self.loop_state.get_result_by_index(idx_acc)
-        accepted_results = [NoisyUserFunctionWithGradientsResult(x, y, dy, vary, vardy)]
-        # Todo: get accepted step size from somewhere
-        alpha_acc = 1.
-
-        # update alpha stats
-        gamma = 0.95
-        alpha_stats = gamma * self.loop_state.alpha_stats + (1. - gamma) * alpha_acc
-
-        # next step size
-        alpha_next = alpha_ext * alpha_acc
-
-        # Safeguard if step size is changed more than 100 %
-        if (alpha_next * theta_reset < alpha_stats) or (alpha_next > alpha_stats * theta_reset):
-            alpha_next = alpha0
-            _log.info("Resetting step size.")
-
-        loop_state = ProbLSLoopState(accepted_results, -dy, [0.], alpha_next, alpha_stats)
-        return alpha_acc, pw, loop_state
-
-    def run_loop(self, user_function: NoisyUserFunctionWithGradientsWrapper,
-                 stopping_condition: WolfeThresholdStoppingCondition = None, context: dict=None) -> None:
+    def run_loop(self, user_function: NoisyUserFunctionWithGradientsWrapper, context: dict=None) -> Tuple[ProbLSLoopState, float]:
         """
         :param user_function: The function that we are emulating
-        :param stopping_condition: A threshold on the Wolfe probability is used as stopping criterion.
         """
-        if not isinstance(stopping_condition, WolfeThresholdStoppingCondition):
-            raise ValueError("Expected stopping_condition to be a WolfeThresholdStoppingCondition instance, "
-                             "but received {}".format(type(stopping_condition)))
+        # Todo: what is this?
+        #self.loop_start_event(self, self.loop_state)
 
-        if not isinstance(user_function, NoisyUserFunctionWithGradientsWrapper):
-            raise ValueError("Expected user_function to be a NoisyUserFunctionWithGradientsWrapper instance, "
-                             "but received {}".format(type(user_function)))
+        tt = 1.
+        while True:
 
-        _log.info("Starting outer loop")
+            # evaluate function, update loop_state
+            self._evaluate(user_function, tt)
 
-        self.loop_start_event(self, self.loop_state)
+            # update model, get wolfe probabilties
+            wolfe_probabilities = self._update()
 
-        while not stopping_condition.should_stop(self.loop_state):
-            _log.info("Iteration {}".format(self.loop_state.iteration))
+            # check current points for acceptance (checks last point first)
+            should_stop_pw, idx_accept = self.stopping_condition_pw.should_stop(wolfe_probabilities)
 
-            self._update_models()
-            new_x = self.candidate_point_calculator.compute_next_points(self.loop_state, context)
-            results = user_function.evaluate(new_x)
-            self.loop_state.update(results)
-            self.iteration_end_event(self, self.loop_state)
+            # stop if Wolfe point is found
+            if should_stop_pw:
+                # print('Wolfe point found')
+                next_loop_state = get_next_loop_state(self.loop_state, idx_accept)
+                tt_accept = self.model.X[idx_accept, 0]  # only for debugging
+                break
 
-        self._update_models()
-        _log.info("Finished outer loop")
+            # no Wolfe point found -> get next candidate point
+            tt, should_stop_uphill = self.candidate_point_calculator.compute_next_points(self.loop_state)
 
+            # stop because we are walking uphill
+            if should_stop_uphill:
+                print('Uphill')
+                self._evaluate(user_function, tt)
+                next_loop_state = get_next_loop_state(self.loop_state, -1)
+                tt_accept = self.model.X[idx_accept, 0]  # only for debugging
+                break
+
+            # stop if fixed iteration reached
+            if self.stopping_condition_fix.should_stop(self.loop_state):
+                print('fixed iter reached')
+                self._evaluate(user_function, tt)
+                wolfe_probabilities = self._update()
+                should_stop_pw, idx_accept = self.stopping_condition_pw.should_stop(wolfe_probabilities)
+                if should_stop_pw:
+                    print('Wolfe point found in last evaluation')
+                    next_loop_state = get_next_loop_state(self.loop_state, idx_accept)
+                    tt_accept = self.model.X[idx_accept, 0]  # only for debugging
+                    break
+
+                idx_accept = self.model.get_index_of_lowest_observed_mean()
+                next_loop_state = get_next_loop_state(self.loop_state, idx_accept)
+                tt_accept = self.model.X[idx_accept, 0]  # only for debugging
+                break
+
+        return next_loop_state, tt_accept
+
+    def _xfunc(self, tt: float) -> np.ndarray:
+        """Converts learning rate to parameters"""
+        return self.loop_state.results[0].X + (tt * self.loop_state.alpha0) * self.loop_state.search_direction[:, np.newaxis].T
+
+    def _evaluate(self, user_func, tt):
+        # evaluate function
+        results = user_func.evaluate(self._xfunc(tt))
+
+        # append result to loop_state
+        self.loop_state.update(results=results, learning_rates=[tt * self.loop_state.alpha0])
+
+    def _update(self):
+        # update model
+        self.model.set_data(self.loop_state.X_transformed,
+                            self.loop_state.Y_transformed,
+                            self.loop_state.dY_transformed)
+
+        # wolfe probabilities
+        wolfe_probabilities = self.acquisition.acquisition_1.evaluate(self.loop_state.X_transformed)  # this must be pw
+        return wolfe_probabilities

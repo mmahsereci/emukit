@@ -9,30 +9,16 @@ from .noisy_user_function import NoisyUserFunctionWithGradientsResult
 from emukit.core.loop import LoopState
 
 
-class ProbLSLoopState(LoopState):
+class NoisyUserFunctionWithGradientsLoopState(LoopState):
     """
     Contains the state of the loop, which includes a history of all function evaluations.
     """
 
-    def __init__(self, initial_results: List[NoisyUserFunctionWithGradientsResult], search_direction: np.ndarray,
-                 #initial_wolfe_probabilities: List[float],
-                 alpha0: float = 1e-4, alpha_stats: float = None) -> None:
+    def __init__(self, initial_results: List[NoisyUserFunctionWithGradientsResult]) -> None:
         """
-        :param initial_results: The function results from previous function evaluations
-        :param initial_wolfe_probabilities: the wolfe probabilities corresponding to the initial results
-        :param search_direction: the search direction, (num_dim, )
-        :param alpha0: initial step size
-        :param alpha_stats: running average of accepted step sizes (defaults to alpha0)
+        :param initial_results: The function results from previous function evaluations.
         """
         super().__init__(initial_results)
-        # Todo: wolfe probabilities are not static, they change with the model!
-        #self._wolfe_probabilities = initial_wolfe_probabilities
-        self.search_direction = search_direction
-        self._alpha0 = alpha0
-        self.extrapolation_factor = 1.
-        if alpha_stats is None:
-            self._alpha_stats = alpha0
-        self.beta = self._compute_scaling_factor()
 
     @property
     def dY(self) -> np.ndarray:
@@ -55,110 +41,143 @@ class ProbLSLoopState(LoopState):
         """
         return np.array([result.vardY for result in self.results])
 
-    #@property
-    #def wolfe_probabilities(self):
-    #    """
-    #    :return: The Wolfe probabilities in a 2d array: number of points by output dimensions.
-    #    """
-    #    return np.array(self._wolfe_probabilities)
+    def get_result_by_index(self, idx: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        :return: evaluation belonging to idx
+        """
+        return self.results[idx].X, self.results[idx].Y, self.results[idx].dY, self.results[idx].varY, \
+               self.results[idx].vardY
 
-    #@wolfe_probabilities.setter
-    #def wolfe_probabilities(self, values: np.ndarray) -> None:
-    #    self._wolfe_probabilities = values
 
-    @property
-    def alpha_stats(self):
-        """
-        :return: Running average of accepted learning rates. Used as fallback value.
-        """
-        return self._alpha_stats
+class ProbLSLoopState(NoisyUserFunctionWithGradientsLoopState):
 
-    @alpha_stats.setter
-    def alpha_stats(self, value: float) -> None:
+    def __init__(self, initial_results: List[NoisyUserFunctionWithGradientsResult], initial_learning_rates: List[float],
+                 search_direction: np.ndarray, alpha0: float = 1e-4, alpha_stats: float = None) -> None:
         """
-        :param value:
-        :return:
+        :param initial_results: The function results from previous function evaluations. The first in the list needs to
+        be the observations of the current location of the optimizer.
+        :param initial_learning_rates: Learning rates corresponding to initial results
+        :param search_direction: the search direction, (num_dim, )
+        :param alpha0: initial step size
+        :param alpha_stats: running average of accepted step sizes (defaults to alpha0)
         """
-        self._alpha_stats = value
+        super().__init__(initial_results)
+        self.learning_rates = initial_learning_rates
 
-    @property
-    def alpha0(self):
-        """
-        :return: the initial step size
-        """
-        return self._alpha0
+        self.search_direction = search_direction
+        self.alpha0 = alpha0
+        self.alpha_stats = alpha_stats
+        if self.alpha_stats is None:
+            self.alpha_stats = alpha0
 
-    def get_result_by_index(self, idx: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
+        self._f0 = initial_results[0].Y[0]
+        self._df0 = initial_results[0].dY
+        self._Sigmadf0 = initial_results[0].vardY
+        self._Sigmaf0 = initial_results[0].varY[0]
+        self._x0 = initial_results[0].X
+
+        self._beta = self._compute_scaling_factor()
+        self.sigmaf, self.sigmadf = self._compute_observation_noise()
+
+    def update(self, results: List[NoisyUserFunctionWithGradientsResult], learning_rates: List[float]) -> None:
         """
-        :return: evaluation beloning to idx
+        :param results: The latest function results since last update
+        :param learning_rates: The learning rates corresponding to the results
         """
-        return self.results.X[idx], self.results.Y[idx], self.results.dY[idx], self.results.varY[idx], \
-               self.results.vardY[idx], self._wolfe_probabilities[idx]
+        if not results:
+            raise ValueError("Cannot update state with empty result list.")
+
+        if len(results) != len(learning_rates):
+            raise ValueError("Length of results must be equal to length of learning rate. Length are ", len(results),
+                             " and ", len(learning_rates), " respectively.")
+
+        self.iteration += 1
+        self.results += results
+        self.learning_rates += learning_rates
 
     def _compute_scaling_factor(self) -> float:
         """
         Computes the scale of the integrated Wiener process.
         :return: The scale of the integrated Wiener process.
         """
-        # Todo: check if this gives int as return
-        beta = abs(np.dot(self.search_direction, self.vardY[0]))
+        beta = abs(np.dot(self.search_direction, self._df0))
         return beta
 
+    def _compute_observation_noise(self):
+        sigmaf = np.sqrt(self._Sigmaf0) / (self.alpha0 * self._beta)
+        sigmadf = np.sqrt(np.dot(self.search_direction ** 2, self._Sigmadf0)) / self._beta
+        return sigmaf, sigmadf
 
-def create_loop_state_probls(x_init: np.ndarray, y_init: float, dy_init: np.ndarray, vary_init: float,
-                             vardy_init: np.ndarray, alpha0: float, search_direction: np.ndarray,
-                             alpha_stats: float = None) -> ProbLSLoopState:
+    # Todo: these are being computed each time when called. That is a bit inefficient... If I store and append, then
+    #  I'll also need to change the update method.
+
+    @property
+    def X_transformed(self):
+        """The X values in the scaled GP space"""
+        return np.array(self.learning_rates)[:, np.newaxis] / self.alpha0
+
+    @property
+    def Y_transformed(self):
+        """The function values in the scaled GP space"""
+        return (self.Y - self._f0) / (self.alpha0 * self._beta)
+
+    @property
+    def dY_transformed(self):
+        """The projected gradients in the scaled GP space"""
+        res = np.dot(self.dY, self.search_direction) / self._beta
+        return res[:, np.newaxis]
+
+    @property
+    def stdY_transformed(self):
+        """The standard deviations of Y values in the scaled GP space"""
+        return  np.sqrt(self.varY) / (self.alpha0 * self._beta)
+
+    @property
+    def stddY_transformed(self):
+        """The standard deviation of projected gradients in the scaled GP space"""
+        res = np.sqrt(np.dot(self.vardY, self.search_direction ** 2)) / self._beta
+        return res[:, np.newaxis]
+
+    @property
+    def varY_transformed(self):
+        """The variances of Y values in the scaled GP space"""
+        return self.stdY_transformed ** 2
+
+    @property
+    def vardY_transformed(self):
+        """The variances of projected gradients in the scaled GP space"""
+        return self.stddY_transformed ** 2
+
+
+def get_next_loop_state(state: ProbLSLoopState, idx: int, extrapolation_factor: float = 1.3) -> ProbLSLoopState:
     """
-    Creates a loop state object for probabilistic line search using the provided data.
-
-    :param x_init: x value of initial function evaluation (num_dim, )
-    :param y_init: noisy function value of initial function evaluation
-    :param dy_init: noisy gradient of initial function evaluation  (n_points, num_dim)
-    :param vary_init: (estimated) variance of initial function value  (n_points, 1)
-    :param vardy_init: (estimated) variance of initial gradient (n_points, num_dim)
-    :param alpha0: the initial step size
-    :param search_direction: the search direction (num_dim, ). default to y_init
-    :param alpha_stats: the initial value of the running average of accepted step sizes (defaults to alpha0)
+    Constructs the loop state containing the datapoint corresponding to index idx
+    :param state: A ProbLSLoopState object
+    :param idx: the index of the datapoint that will be used to create the loop state
+    :param extrapolation_factor: The extrapolation factor
+    :return: A ProbLSLoopState object
     """
-    # Todo: this might be too much, since we always initialize with 1 observation only
 
-    if alpha_stats is None:
-        alpha_stats = alpha0
+    # Todo: do I need this?
+    #if idx == 0:
+    #    raise ValueError('The first evaluation can never be accepted.')
 
-    if search_direction is None:
-        search_direction = [-y_init]
+    # Todo: make sure this picks the right result. Might check equality of tt
+    accepted_result = state.results[idx]
+    accepted_learning_rate = state.learning_rates[idx]  # alpha_acc = tt * alpha0
+    next_learning_rate = accepted_learning_rate * extrapolation_factor
 
-    # check types
-    if not isinstance(y_init, float):
-        error_message = "Y should be of type float. Actual type Y {}".format(type(y_init))
-        raise TypeError(error_message)
+    gamma = 0.95
+    alpha_stats = gamma * state.alpha_stats + (1 - gamma) * accepted_learning_rate
 
-    if not isinstance(vary_init, float):
-        error_message = "varY should be of type float. Actual type varY {}".format(type(vary_init))
-        raise TypeError(error_message)
+    # reset NEXT initial setp size to average if multiplicative change was larger than 0.01 or 100
+    theta_reset = 100.
+    if (next_learning_rate < alpha_stats / theta_reset) or (next_learning_rate > alpha_stats * theta_reset):
+        next_learning_rate = alpha_stats
 
-    # check dimension and shapes
-    if x_init.ndim != 1:
-        error_message = "X should be 1d array. Actual dim X {}".format(x_init.ndim)
-        raise ValueError(error_message)
+    return ProbLSLoopState(initial_results=[accepted_result],
+                           initial_learning_rates=[0.],
+                           search_direction=-accepted_result.dY,  # this is SGD
+                           alpha0=next_learning_rate,
+                           alpha_stats=alpha_stats)
 
-    if x_init.shape != dy_init.shape:
-        error_message = "X and dY should have the same shape. Actual shapes X {}, dY {}".format(
-            x_init.shape, dy_init.shape)
-        raise ValueError(error_message)
-
-    if x_init.shape != vardy_init.shape:
-        error_message = "X and vardY should have the same shape. Actual shapes X {}, vardY {}".format(
-            x_init.shape, vardy_init.shape)
-        raise ValueError(error_message)
-
-    if x_init.shape != search_direction.shape:
-        error_message = "X and search_direction should have the same shape. Actual shapes X {}, " \
-                        "search_direction {}".format(x_init.shape, search_direction.shape)
-        raise ValueError(error_message)
-
-    initial_results = [NoisyUserFunctionWithGradientsResult(x_init, np.array([y_init]), dy_init, np.array([vary_init]),
-                                                            vardy_init)]
-    initial_wolfe_probabilities = [0.]
-
-    return ProbLSLoopState(initial_results, search_direction, initial_wolfe_probabilities, alpha0, alpha_stats)

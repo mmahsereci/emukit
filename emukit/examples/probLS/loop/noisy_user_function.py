@@ -68,8 +68,7 @@ class NoisyUserFunctionWithGradientsWrapper(NoisyUserFunctionWithGradients):
 
         results = []
         for x, y, dy, vary, vardy in zip(inputs, y_out, dy_out, vary_out, vardy_out):
-            # Todo: check this
-            results.append(NoisyUserFunctionWithGradientsResult(x, y.flatten(), dy, vary, vardy))
+            results.append(NoisyUserFunctionWithGradientsResult(x, y, dy, vary, vardy))
         return results
 
 

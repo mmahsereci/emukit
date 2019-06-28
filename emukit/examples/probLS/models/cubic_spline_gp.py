@@ -78,15 +78,15 @@ class CubicSplineGP(IModelWithObservedGradientsAndNoise):
         """The line search does not optimize its hyper, but sets them once at the beginning of the loop."""
         pass
 
-    def set_data(self, X: np.ndarray, Y: np.ndarray, dY: np.ndarray, varY: float, vardY: float) -> None:
+    def set_data(self, X: np.ndarray, Y: np.ndarray, dY: np.ndarray, varY: float = None, vardY: float = None) -> None:
         """
         Sets training data in model
 
         :param X: new points (num_points, 1)
         :param Y: noisy function values at new points X, (num_points, 1)
         :param dY: noisy gradients  at new points X, (num_points, 1)
-        :param varY: The variance of the noisy function values
-        :param vardY: The variance of the noisy projected gradients
+        :param varY: The variance of the noisy function values. This is sigmaf^2 in the original paper.
+        :param vardY: The variance of the noisy projected gradients. This is sigmadf^2 in the original paper.
         """
 
         self._T = X
@@ -94,16 +94,31 @@ class CubicSplineGP(IModelWithObservedGradientsAndNoise):
         self._dY = dY
         self.N = X.shape[0]
 
-        # Note: this is sigma squared in the original paper
-        if not isinstance(varY, float):
-            raise TypeError('varY must be float. ', type(varY), ' given.')
-        if not isinstance(vardY, float):
-            raise TypeError('vardY must be float. ', type(vardY), ' given.')
+        if varY is not None:
+            if not isinstance(varY, float):
+                raise TypeError('varY must be float. ', type(varY), ' given.')
+            self._varY = np.array(self.N * [varY])
+        if vardY is not None:
+            if not isinstance(vardY, float):
+                raise TypeError('vardY must be float. ', type(vardY), ' given.')
+            self._vardY = np.array(self.N * [vardY])
 
-        self._varY = np.array(self.N * [varY])
-        self._vardY = np.array(self.N * [vardY])
+        if self._varY is None:
+            raise ValueError("varY is not provided.")
+
+        if self._vardY is None:
+            raise ValueError("vardY is not provided.")
 
         self._update()
+
+    def get_index_of_lowest_observed_mean(self) -> int:
+        """
+        Computes the index of the datapoint which has the lowest GP posterior mean
+        :return: Index corresponding to tthe lowest observed GP mean. The initial evaluation is excluded.
+        """
+        M = np.array([self.m(t) for t in self.X[1:, 0]])
+        idx_min = np.argmin(M) + 1
+        return int(idx_min)
 
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -342,8 +357,6 @@ class CubicSplineGP(IModelWithObservedGradientsAndNoise):
         :param t: location where covariance is computed
         :return: posterior covariance
         """
-        # Todo: What does this man?
-        # !!! I changed this in line_search new, Covd_0 <-> dCov_0
         kvec_left = np.hstack([self.k(0., self._T), self.kd(0., self._T)]).squeeze()
         kvec_right = np.hstack([self.dk(t, self._T), self.dkd(t, self._T)]).squeeze()
         cov_reduction = (kvec_left * self._solve_gram(kvec_right)).sum()

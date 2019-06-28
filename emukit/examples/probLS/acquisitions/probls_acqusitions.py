@@ -9,7 +9,7 @@ from typing import Tuple
 from emukit.core.acquisition import Acquisition
 from ...probLS.models.cubic_spline_gp import CubicSplineGP
 from ...probLS.interfaces.models import IModelWithObservedGradientsAndNoise
-from ...probLS.loop.wolfe_conditions import WolfeConditions
+from ...probLS.loop.probls_wolfe_conditions import WolfeConditions
 from .bivariate_normal_integral import compute_bivariate_normal_integral
 
 

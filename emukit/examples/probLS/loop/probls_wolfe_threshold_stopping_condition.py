@@ -6,28 +6,27 @@ import numpy as np
 from typing import Tuple, Union
 
 from emukit.core.loop import StoppingCondition
-from .wolfe_conditions import WolfeConditions
-from .probls_loop_state import ProbLSLoopState
+from .probls_wolfe_conditions import WolfeConditions
 
 
 class WolfeThresholdStoppingCondition(StoppingCondition):
     """ Stops when point is found that fulfills the probabilistic Wolfe conditions """
     def __init__(self, wolfe_conditions: WolfeConditions) -> None:
         """
-        :param wolfe_conditions: The probabilistic Wolfe conditions used in the loop
+        :param wolfe_conditions: The probabilistic Wolfe conditions used in the loop, i,e., the same as used in the
+        acquisition function.
         """
         self.wolfe_conditions = wolfe_conditions
 
-    def should_stop(self, loop_state: ProbLSLoopState) -> Tuple[bool, Union[int, None]]:
+    def should_stop(self, wolfe_probabilities: np.ndarray) -> Tuple[bool, Union[int, None]]:
         """
-        :param loop_state: Object that contains current state of the line search loop
+        :param wolfe_probabilities: The wolfe probabilities in the order of evaluation
         :return: True if point point that has Wolfe probability larger than threshold cw; index of which evaluation has
         been accepted (None if no point is accepted).
         """
-        # Todo: there is not fixed iteration here? how to handle it?
-        num_evals = loop_state.wolfe_probabilities.shape[0]
-        wolfe_idx = np.where(loop_state.wolfe_probabilities > self.wolfe_conditions.cw)[0]
-        wolfe_set = loop_state.wolfe_probabilities[wolfe_idx]
+        num_evals = wolfe_probabilities.shape[0]
+        wolfe_idx = np.where(wolfe_probabilities > self.wolfe_conditions.cw)[0]
+        wolfe_set = wolfe_probabilities[wolfe_idx]
 
         # empty wolfe set
         if len(wolfe_set) == 0:
@@ -35,7 +34,7 @@ class WolfeThresholdStoppingCondition(StoppingCondition):
 
         # Wolfe set has one entry
         elif len(wolfe_set) == 1:
-            accept = loop_state.wolfe_probabilities[0] > self.wolfe_conditions.cw
+            accept = wolfe_probabilities[0] > self.wolfe_conditions.cw
             idx = wolfe_idx[0]
             return accept, int(idx)
 
@@ -43,7 +42,7 @@ class WolfeThresholdStoppingCondition(StoppingCondition):
         else:
             # check last eval first if it exists
             if wolfe_idx[-1] == num_evals - 1:
-                accept = loop_state.wolfe_probabilities[-1] > self.wolfe_conditions.cw
+                accept = wolfe_probabilities[-1] > self.wolfe_conditions.cw
                 # return of last point is acceptable
                 if accept:
                     idx = wolfe_idx[-1]
