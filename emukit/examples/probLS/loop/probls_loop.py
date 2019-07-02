@@ -26,9 +26,8 @@ class ProbLineSearch(OuterLoop):
 
     def __init__(self, loop_state_init: ProbLSLoopState):
         """
-        The loop for the probabilistic linea search (a bit over-engineered, but it is fun)
+        The loop for the probabilistic line search (a bit over-engineered, but it is fun)
 
-        :param model: the cubic spline Gaussian Process model
         :param loop_state_init: The initial state of the loop.
         """
         self.model = CubicSplineGP(X=loop_state_init.X_transformed,
@@ -73,10 +72,10 @@ class ProbLineSearch(OuterLoop):
 
             # stop if Wolfe point is found
             if should_stop_pw:
-                # print('Wolfe point found')
+                print('Wolfe point found')
                 next_loop_state = get_next_loop_state(self.loop_state, idx_accept)
                 tt_accept = self.model.X[idx_accept, 0]  # only for debugging
-                break
+                return next_loop_state, tt_accept
 
             # no Wolfe point found -> get next candidate point
             tt, should_stop_uphill = self.candidate_point_calculator.compute_next_points(self.loop_state)
@@ -87,7 +86,7 @@ class ProbLineSearch(OuterLoop):
                 self._evaluate(user_function, tt)
                 next_loop_state = get_next_loop_state(self.loop_state, -1)
                 tt_accept = self.model.X[idx_accept, 0]  # only for debugging
-                break
+                return next_loop_state, tt_accept
 
             # stop if fixed iteration reached
             if self.stopping_condition_fix.should_stop(self.loop_state):
@@ -99,14 +98,12 @@ class ProbLineSearch(OuterLoop):
                     print('Wolfe point found in last evaluation')
                     next_loop_state = get_next_loop_state(self.loop_state, idx_accept)
                     tt_accept = self.model.X[idx_accept, 0]  # only for debugging
-                    break
+                    return next_loop_state, tt_accept
 
                 idx_accept = self.model.get_index_of_lowest_observed_mean()
                 next_loop_state = get_next_loop_state(self.loop_state, idx_accept)
                 tt_accept = self.model.X[idx_accept, 0]  # only for debugging
-                break
-
-        return next_loop_state, tt_accept
+                return next_loop_state, tt_accept
 
     def _xfunc(self, tt: float) -> np.ndarray:
         """Converts learning rate to parameters"""

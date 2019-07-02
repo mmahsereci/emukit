@@ -86,7 +86,7 @@ class ProbLSCandidatePointCalculator(CandidatePointCalculator):
         lie in that cell.
         :return: A list of candidates, bool if the search was successful
         """
-        T_sorted = list(self.model.X)
+        T_sorted = list(self.model.X[:, 0])
         T_sorted.sort()
 
         T_min = []

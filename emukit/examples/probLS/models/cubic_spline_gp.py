@@ -3,7 +3,7 @@
 
 
 import numpy as np
-from scipy.linalg import solve_triangular
+from scipy.linalg import solve_triangular, lu_factor, lu_solve, solve
 from typing import Tuple, Union
 
 from ..interfaces.models import IModelWithObservedGradientsAndNoise
@@ -97,7 +97,8 @@ class CubicSplineGP(IModelWithObservedGradientsAndNoise):
         if varY is not None:
             if not isinstance(varY, float):
                 raise TypeError('varY must be float. ', type(varY), ' given.')
-            self._varY = np.array(self.N * [varY])
+            varY_clip = np.clip(varY, 1e-8, np.inf)
+            self._varY = np.array(self.N * [varY_clip])
         if vardY is not None:
             if not isinstance(vardY, float):
                 raise TypeError('vardY must be float. ', type(vardY), ' given.')
@@ -171,7 +172,8 @@ class CubicSplineGP(IModelWithObservedGradientsAndNoise):
         self._G = 0.5 * (self._G + self._G.T)
 
         # Cholesky and weights
-        self._L = np.linalg.cholesky(self._G)
+        # self._L = np.linalg.cholesky(self._G)
+        # self._LU, self._LU_piv = lu_factor(self._G, check_finite=True)
         self._A = self._solve_gram(np.vstack([self._Y, self._dY]).squeeze())  # shape (2 N,)
 
     def _solve_gram(self, b: np.ndarray) -> np.ndarray:
@@ -180,8 +182,10 @@ class CubicSplineGP(IModelWithObservedGradientsAndNoise):
         :param b: right side of linear equation (vector)
         :return: solution x of linear system
         """
-        tmp = solve_triangular(self._L, b, lower=True)
-        return solve_triangular(self._L.T, tmp, lower=False)  # shape (2 N,)
+        #return lu_solve((self._LU, self._LU_piv), b, check_finite=True)
+        return solve(self._G, b)
+        #tmp = solve_triangular(self._L, b, lower=True)
+        #return solve_triangular(self._L.T, tmp, lower=False)  # shape (2 N,)
 
     # === posterior means start here ===
     def m(self, t: float) -> float:

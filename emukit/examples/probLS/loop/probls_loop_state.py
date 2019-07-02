@@ -72,8 +72,8 @@ class ProbLSLoopState(NoisyUserFunctionWithGradientsLoopState):
 
         self._f0 = initial_results[0].Y[0]
         self._df0 = initial_results[0].dY
-        self._Sigmadf0 = initial_results[0].vardY
         self._Sigmaf0 = initial_results[0].varY[0]
+        self._Sigmadf0 = initial_results[0].vardY
         self._x0 = initial_results[0].X
 
         self._beta = self._compute_scaling_factor()

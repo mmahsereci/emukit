@@ -47,7 +47,7 @@ class WolfeThresholdStoppingCondition(StoppingCondition):
                 if accept:
                     idx = wolfe_idx[-1]
                     return accept, int(idx)
-                # check the other points and choose the one with highest Wolfe probability
-                idx_wolfe_set = wolfe_set.armax()
-                idx = wolfe_idx[idx_wolfe_set]
-                return True, int(idx)
+            # check the other points and choose the one with highest Wolfe probability
+            idx_wolfe_set = wolfe_set.argmax()
+            idx = wolfe_idx[idx_wolfe_set]
+            return True, int(idx)
