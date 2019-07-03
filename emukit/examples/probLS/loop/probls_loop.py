@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-from typing import Tuple, Union, Callable
+from typing import Tuple
 import numpy as np
 
 from emukit.core.loop import OuterLoop
@@ -15,7 +15,7 @@ from ...probLS.loop.probls_wolfe_conditions import WolfeConditions
 from ...probLS.loop.probls_candidate_point_calculator import ProbLSCandidatePointCalculator
 from ...probLS.loop.probls_wolfe_threshold_stopping_condition import WolfeThresholdStoppingCondition
 from ...probLS.loop.noisy_user_function import NoisyUserFunctionWithGradientsWrapper
-
+from ...probLS.loop.probls_model_updater import ProbLSModelUpdater
 
 import logging
 _log = logging.getLogger(__name__)
@@ -41,22 +41,20 @@ class ProbLineSearch(OuterLoop):
         self.acquisition = Product(pw, nei)
 
         candidate_point_calculator = ProbLSCandidatePointCalculator(acquisition=self.acquisition)
+        model_updater = ProbLSModelUpdater(self.model)
 
-        # todo: model updater??
-        #super().__init__(candidate_point_calculator, model_updater, loop_state_init)
+        super().__init__(candidate_point_calculator, model_updater, loop_state_init)
 
-        self.loop_state = loop_state_init
-        self.candidate_point_calculator = candidate_point_calculator
+        #self.loop_state = loop_state_init
+        #self.candidate_point_calculator = candidate_point_calculator
 
         self.stopping_condition_pw = WolfeThresholdStoppingCondition(self.acquisition.acquisition_1.wolfe_condition)
         self.stopping_condition_fix = FixedIterationsStoppingCondition(i_max=6)
 
-    def run_loop(self, user_function: NoisyUserFunctionWithGradientsWrapper, context: dict=None) -> Tuple[ProbLSLoopState, float]:
+    def run_loop(self, user_function: NoisyUserFunctionWithGradientsWrapper) -> Tuple[ProbLSLoopState, float]:
         """
         :param user_function: The function that we are emulating
         """
-        # Todo: what is this?
-        #self.loop_start_event(self, self.loop_state)
 
         tt = 1.
         while True:
@@ -64,7 +62,7 @@ class ProbLineSearch(OuterLoop):
             # evaluate function, update loop_state
             self._evaluate(user_function, tt)
 
-            # update model, get wolfe probabilties
+            # update model, get wolfe probabilities
             wolfe_probabilities = self._update()
 
             # check current points for acceptance (checks last point first)
@@ -106,7 +104,7 @@ class ProbLineSearch(OuterLoop):
                 return next_loop_state, tt_accept
 
     def _xfunc(self, tt: float) -> np.ndarray:
-        """Converts learning rate to parameters"""
+        """Converts scaled learning rate to parameters"""
         return self.loop_state.results[0].X + (tt * self.loop_state.alpha0) * self.loop_state.search_direction[:, np.newaxis].T
 
     def _evaluate(self, user_func, tt):
@@ -118,10 +116,8 @@ class ProbLineSearch(OuterLoop):
 
     def _update(self):
         # update model
-        self.model.set_data(self.loop_state.X_transformed,
-                            self.loop_state.Y_transformed,
-                            self.loop_state.dY_transformed)
+        self.model_updaters[0].update(self.loop_state)
 
         # wolfe probabilities
         wolfe_probabilities = self.acquisition.acquisition_1.evaluate(self.loop_state.X_transformed)  # this must be pw
-        return wolfe_probabilities
+        return wolfe_probabilities[:, 0]

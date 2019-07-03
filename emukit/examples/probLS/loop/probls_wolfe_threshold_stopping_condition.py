@@ -24,6 +24,7 @@ class WolfeThresholdStoppingCondition(StoppingCondition):
         :return: True if point point that has Wolfe probability larger than threshold cw; index of which evaluation has
         been accepted (None if no point is accepted).
         """
+        wolfe_probabilities = wolfe_probabilities[1:]  # exclude initial evaluation (add 1 to idx later)
         num_evals = wolfe_probabilities.shape[0]
         wolfe_idx = np.where(wolfe_probabilities > self.wolfe_conditions.cw)[0]
         wolfe_set = wolfe_probabilities[wolfe_idx]
@@ -35,7 +36,7 @@ class WolfeThresholdStoppingCondition(StoppingCondition):
         # Wolfe set has one entry
         elif len(wolfe_set) == 1:
             accept = wolfe_probabilities[0] > self.wolfe_conditions.cw
-            idx = wolfe_idx[0]
+            idx = wolfe_idx[0] + 1
             return accept, int(idx)
 
         # Wolfe set has more than one entry
@@ -45,9 +46,9 @@ class WolfeThresholdStoppingCondition(StoppingCondition):
                 accept = wolfe_probabilities[-1] > self.wolfe_conditions.cw
                 # return of last point is acceptable
                 if accept:
-                    idx = wolfe_idx[-1]
+                    idx = wolfe_idx[-1] + 1
                     return accept, int(idx)
             # check the other points and choose the one with highest Wolfe probability
             idx_wolfe_set = wolfe_set.argmax()
-            idx = wolfe_idx[idx_wolfe_set]
+            idx = wolfe_idx[idx_wolfe_set] + 1
             return True, int(idx)

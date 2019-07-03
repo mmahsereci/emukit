@@ -72,8 +72,8 @@ class ProbLSLoopState(NoisyUserFunctionWithGradientsLoopState):
 
         self._f0 = initial_results[0].Y[0]
         self._df0 = initial_results[0].dY
-        self._Sigmaf0 = initial_results[0].varY[0]
-        self._Sigmadf0 = initial_results[0].vardY
+        self._Sigmaf0 = np.clip(initial_results[0].varY[0], 1e-6, np.inf)
+        self._Sigmadf0 = np.clip(initial_results[0].vardY, 1e-6, np.inf)
         self._x0 = initial_results[0].X
 
         self._beta = self._compute_scaling_factor()
@@ -157,12 +157,6 @@ def get_next_loop_state(state: ProbLSLoopState, idx: int, extrapolation_factor: 
     :param extrapolation_factor: The extrapolation factor
     :return: A ProbLSLoopState object
     """
-
-    # Todo: do I need this?
-    #if idx == 0:
-    #    raise ValueError('The first evaluation can never be accepted.')
-
-    # Todo: make sure this picks the right result. Might check equality of tt
     accepted_result = state.results[idx]
     accepted_learning_rate = state.learning_rates[idx]  # alpha_acc = tt * alpha0
     next_learning_rate = accepted_learning_rate * extrapolation_factor
