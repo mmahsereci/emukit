@@ -17,7 +17,7 @@ class ProbLSModelUpdater(ModelUpdater):
 
     def update(self, loop_state: ProbLSLoopState) -> None:
         """
-        Updates the training data of the model.
+        Updates the training data of the model. Note that it does not update the variances.
         :param loop_state: Object that contains current state of the loop
         """
         self.model.set_data(loop_state.X_transformed,
