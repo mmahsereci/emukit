@@ -3,7 +3,7 @@
 
 
 import numpy as np
-from scipy.linalg import solve_triangular, lu_factor, lu_solve, solve
+from scipy.linalg import lu_factor, lu_solve, solve
 from typing import Tuple, Union
 
 from ..interfaces.models import IModelWithObservedGradientsAndNoise
@@ -12,7 +12,7 @@ from ..interfaces.models import IModelWithObservedGradientsAndNoise
 class CubicSplineGP(IModelWithObservedGradientsAndNoise):
     """A once integrated Wiener process (cubic spline Gaussian process)."""
 
-    def __init__(self, X: np.ndarray, Y: np.ndarray, dY: np.ndarray, varY: float, vardY: float, offset: float = 10.0):
+    def __init__(self, X: np.ndarray, Y: np.ndarray, dY: np.ndarray, varY: float, vardY: float):
         """
         All values are in the scaled space.
 
@@ -21,11 +21,10 @@ class CubicSplineGP(IModelWithObservedGradientsAndNoise):
         :param dY: noisy gradient at starting point of line search (num_dat, 1)
         :param varY: The variance of the noisy function values
         :param vardY: The variance of the noisy projected gradients
-        :param offset: offset of the kernel to the left in inputs space
         """
 
         # kernel parameters
-        self._offset = offset
+        self._offset = 10.  # offset to the kernel input (moves the start of the process to the left in inputs space)
 
         # Kernel matrices
         self._K = None
@@ -35,7 +34,8 @@ class CubicSplineGP(IModelWithObservedGradientsAndNoise):
         # Gram matrix and pre-computed weights of the GP
         self._G = None
         self._A = None
-        self._L = None
+        self._LU = None
+        self._LU_piv = None
 
         # Observation counter and arrays to store observations
         self.N = X.shape[0]
@@ -171,7 +171,7 @@ class CubicSplineGP(IModelWithObservedGradientsAndNoise):
         self._G = 0.5 * (self._G + self._G.T)
 
         # Gram decomposition and weights
-        #self._LU, self._LU_piv = lu_factor(self._G, check_finite=True)
+        self._LU, self._LU_piv = lu_factor(self._G, check_finite=True)
         self._A = self._solve_gram(np.vstack([self._Y, self._dY]).squeeze())  # shape (2 N,)
 
     def _solve_gram(self, b: np.ndarray) -> np.ndarray:
@@ -180,8 +180,8 @@ class CubicSplineGP(IModelWithObservedGradientsAndNoise):
         :param b: right side of linear equation (vector)
         :return: solution x of linear system
         """
-        return solve(self._G, b)
-        #return lu_solve((self._LU, self._LU_piv), b, check_finite=True)
+        #return solve(self._G, b)
+        return lu_solve((self._LU, self._LU_piv), b, check_finite=True)
 
     # === posterior means start here ===
     def m(self, t: float) -> float:

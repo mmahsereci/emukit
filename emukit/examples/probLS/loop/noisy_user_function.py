@@ -41,7 +41,6 @@ class NoisyUserFunctionWithGradientsWrapper(NoisyUserFunctionWithGradients):
             raise ValueError("User function should receive 2d array as an input, "
                              "actual input dimensionality is {}".format(inputs.ndim))
 
-        _log.info("Evaluating user function for {} point(s)".format(inputs.shape[0]))
         outputs = self.f(inputs)
 
         if isinstance(outputs, tuple):
