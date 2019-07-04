@@ -5,53 +5,12 @@
 import numpy as np
 from typing import List, Tuple
 
-from .noisy_user_function import NoisyUserFunctionWithGradientsResult
-from emukit.core.loop import LoopState
+from emukit.core.loop import LoopState, UserFunctionResult
 
 
-class NoisyUserFunctionWithGradientsLoopState(LoopState):
-    """
-    Contains the state of the loop, which includes a history of all function evaluations.
-    """
+class ProbLSLoopState(LoopState):
 
-    def __init__(self, initial_results: List[NoisyUserFunctionWithGradientsResult]) -> None:
-        """
-        :param initial_results: The function results from previous function evaluations.
-        """
-        super().__init__(initial_results)
-
-    @property
-    def dY(self) -> np.ndarray:
-        """
-        :return: Noisy gradients for all function evaluations in a 2d array: number of points by input dimensions.
-        """
-        return np.array([result.dY for result in self.results])
-
-    @property
-    def varY(self) -> np.ndarray:
-        """
-        :return: (Estimated) variances for all function evaluations in a 2d array: number of points by output dimensions.
-        """
-        return np.array([result.varY for result in self.results])
-
-    @property
-    def vardY(self) -> np.ndarray:
-        """
-        :return: (Estimated) variances for all gradients in a 2d array: number of points by output dimensions.
-        """
-        return np.array([result.vardY for result in self.results])
-
-    def get_result_by_index(self, idx: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """
-        :return: evaluation belonging to idx
-        """
-        return self.results[idx].X, self.results[idx].Y, self.results[idx].dY, self.results[idx].varY, \
-               self.results[idx].vardY
-
-
-class ProbLSLoopState(NoisyUserFunctionWithGradientsLoopState):
-
-    def __init__(self, initial_results: List[NoisyUserFunctionWithGradientsResult], initial_learning_rates: List[float],
+    def __init__(self, initial_results: List[UserFunctionResult], initial_learning_rates: List[float],
                  search_direction: np.ndarray, alpha0: float = 1e-4, alpha_stats: float = None) -> None:
         """
         :param initial_results: The function results from previous function evaluations. The first in the list needs to
@@ -79,7 +38,7 @@ class ProbLSLoopState(NoisyUserFunctionWithGradientsLoopState):
         self._beta = self._compute_scaling_factor()
         self.sigmaf, self.sigmadf = self._compute_observation_noise()
 
-    def update(self, results: List[NoisyUserFunctionWithGradientsResult], learning_rates: List[float]) -> None:
+    def update(self, results: List[UserFunctionResult], learning_rates: List[float]) -> None:
         """
         :param results: The latest function results since last update
         :param learning_rates: The learning rates corresponding to the results
@@ -110,7 +69,6 @@ class ProbLSLoopState(NoisyUserFunctionWithGradientsLoopState):
 
     # Todo: these are being computed each time when called. That is a bit inefficient... If I store and append, then
     #  I'll also need to change the update method.
-
     @property
     def X_transformed(self):
         """The X values in the scaled GP space"""
@@ -130,7 +88,7 @@ class ProbLSLoopState(NoisyUserFunctionWithGradientsLoopState):
     @property
     def stdY_transformed(self):
         """The standard deviations of Y values in the scaled GP space"""
-        return  np.sqrt(self.varY) / (self.alpha0 * self._beta)
+        return np.sqrt(self.varY) / (self.alpha0 * self._beta)
 
     @property
     def stddY_transformed(self):
@@ -174,4 +132,3 @@ def get_next_loop_state(state: ProbLSLoopState, idx: int, extrapolation_factor: 
                            search_direction=-accepted_result.dY,  # this is SGD
                            alpha0=next_learning_rate,
                            alpha_stats=alpha_stats)
-
