@@ -17,7 +17,7 @@ class IBaseGaussianProcess(IModel):
     If this GP is initialized with data, use the raw evaluations Y of the integrand and not transformed values.
     """
 
-    def __init__(self, kern: QuadratureKernel) -> None:
+    def __init__(self, kern: QuadratureKernel, constant_mean: float=None) -> None:
         """
         If this GP is initialized with data X, Y, use the raw evaluations Y of the integrand and not transformed values
         as this is a general class that can be used with various quadrature methods. The transformation will be
@@ -25,6 +25,10 @@ class IBaseGaussianProcess(IModel):
         :param kern: a quadrature kernel
         """
         self.kern = kern
+        if constant_mean is None:
+            self.constant_mean = 0.
+        else:
+            self.constant_mean = constant_mean
 
     @property
     def observation_noise_variance(self) -> np.float:

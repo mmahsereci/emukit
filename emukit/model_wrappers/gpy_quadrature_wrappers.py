@@ -18,17 +18,18 @@ class BaseGaussianProcessGPy(IBaseGaussianProcess):
 
     If this GP is initialized with data, use the raw evaluations Y of the integrand and not transformed values.
     """
-    def __init__(self, kern: QuadratureKernel, gpy_model, noise_free: bool=True):
+    def __init__(self, kern: QuadratureKernel, gpy_model, constant_mean: float=None, noise_free: bool=True):
         """
         :param kern: a quadrature kernel
         :param gpy_model: A GPy GP regression model, GPy.models.GPRegression
         :param noise_free: if False, the observation noise variance will be treated as a model parameter,
         if True it is set to 1e-10, defaults to True
         """
-        super().__init__(kern=kern)
+        super().__init__(kern=kern, constant_mean=constant_mean)
         if noise_free:
             gpy_model.Gaussian_noise.constrain_fixed(1.e-10)
         self.gpy_model = gpy_model
+        self.set_data(gpy_model.X, gpy_model.Y)  # for the mean
 
     @property
     def X(self) -> np.ndarray:
@@ -52,7 +53,7 @@ class BaseGaussianProcessGPy(IBaseGaussianProcess):
         :param X: New training features
         :param Y: New training outputs
         """
-        self.gpy_model.set_XY(X, Y)
+        self.gpy_model.set_XY(X, Y - self.constant_mean)
 
     def predict(self, X_pred: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -61,7 +62,8 @@ class BaseGaussianProcessGPy(IBaseGaussianProcess):
         :param X_pred: points at which to predict, with shape (number of points, dimension)
         :return: Predictive mean, predictive variances shapes (num_points, 1) and (num_points, 1)
         """
-        return self.gpy_model.predict(X_pred, full_cov=False)
+        m, v = self.gpy_model.predict(X_pred, full_cov=False)
+        return m + self.constant_mean, v
 
     def predict_with_full_covariance(self, X_pred: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -70,7 +72,8 @@ class BaseGaussianProcessGPy(IBaseGaussianProcess):
         :param X_pred: points at which to predict, with shape (num_points, input_dim)
         :return: Predictive mean, predictive full covariance shapes (num_points, 1) and (num_points, num_points)
         """
-        return self.gpy_model.predict(X_pred, full_cov=True)
+        m, v = self.gpy_model.predict(X_pred, full_cov=True)
+        return m + self.constant_mean, v
 
     def gram_chol(self) -> np.ndarray:
         """
