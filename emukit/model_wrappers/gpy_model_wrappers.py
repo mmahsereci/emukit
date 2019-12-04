@@ -7,12 +7,12 @@ from typing import Tuple
 import numpy as np
 import GPy
 
-from ..core.interfaces import IModel, IDifferentiable, IPriorHyperparameters
+from ..core.interfaces import IModel, IDifferentiable, IJointlyDifferentiable, IPriorHyperparameters
 from ..experimental_design.interfaces import ICalculateVarianceReduction
 from ..bayesian_optimization.interfaces import IEntropySearchModel
 
 
-class GPyModelWrapper(IModel, IDifferentiable, ICalculateVarianceReduction, IEntropySearchModel, IPriorHyperparameters):
+class GPyModelWrapper(IModel, IDifferentiable, IJointlyDifferentiable, ICalculateVarianceReduction, IEntropySearchModel, IPriorHyperparameters):
     """
     This is a thin wrapper around GPy models to allow users to plug GPy models into Emukit
     """
@@ -31,6 +31,14 @@ class GPyModelWrapper(IModel, IDifferentiable, ICalculateVarianceReduction, IEnt
         """
         return self.model.predict(X)
 
+    def predict_with_full_covariance(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        :param X: (n_points x n_dimensions) array containing locations at which to get predictions
+        :return: (mean, variance) Arrays of size n_points x 1 and n_points x n_points of the predictive
+                 mean and variance at each input location
+        """
+        return self.model.predict(X, full_cov=True)
+
     def get_prediction_gradients(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         :param X: (n_points x n_dimensions) array containing locations at which to get gradient of the predictions
@@ -39,6 +47,19 @@ class GPyModelWrapper(IModel, IDifferentiable, ICalculateVarianceReduction, IEnt
         """
         d_mean_dx, d_variance_dx = self.model.predictive_gradients(X)
         return d_mean_dx[:, :, 0], d_variance_dx
+
+    def get_joint_prediction_gradients(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Computes and returns model gradients of mean and full covariance matrix at given points
+
+        :param X: points to compute gradients at, nd array of shape (q, d)
+        :return: Tuple with first item being gradient of the mean of shape (q) at X with respect to X (return shape is (q, q, d)).
+                 The second item is the gradient of the full covariance matrix of shape (q, q) at X with respect to X
+                 (return shape is (q, q, q, d)).
+        """
+        dmean_dx = dmean(X, self.model.X, self.model.kern, self.model.posterior.woodbury_vector[:, 0])
+        dvariance_dx = dSigma(X, self.model.X, self.model.kern, self.model.posterior.woodbury_inv)
+        return dmean_dx, dvariance_dx
 
     def set_data(self, X: np.ndarray, Y: np.ndarray) -> None:
         """
@@ -100,8 +121,8 @@ class GPyModelWrapper(IModel, IDifferentiable, ICalculateVarianceReduction, IEnt
         """
         return self.model.Y
 
-    def generate_hyperparameters_samples(self, n_samples = 20, n_burnin = 100, subsample_interval  = 10,
-                                         step_size = 1e-1, leapfrog_steps = 20) -> None:
+    def generate_hyperparameters_samples(self, n_samples=20, n_burnin=100, subsample_interval=10,
+                                         step_size=1e-1, leapfrog_steps=20) -> None:
         """
         Generates the samples from the hyper-parameters
         :param n_samples: Number of generated samples.
@@ -113,9 +134,9 @@ class GPyModelWrapper(IModel, IDifferentiable, ICalculateVarianceReduction, IEnt
 
         """
         self.model.optimize(max_iters=self.n_restarts)
-        self.model.param_array[:] = self.model.param_array * (1.+np.random.randn(self.model.param_array.size)*0.01)
-        hmc = GPy.inference.mcmc.HMC(self.model, stepsize = step_size)
-        samples = hmc.sample(num_samples = n_burnin + n_samples * subsample_interval, hmc_iters = leapfrog_steps)
+        self.model.param_array[:] = self.model.param_array * (1. + np.random.randn(self.model.param_array.size) * 0.01)
+        hmc = GPy.inference.mcmc.HMC(self.model, stepsize=step_size)
+        samples = hmc.sample(num_samples=n_burnin + n_samples * subsample_interval, hmc_iters=leapfrog_steps)
         hmc_samples = samples[n_burnin::subsample_interval]
 
         return hmc_samples
@@ -132,6 +153,55 @@ class GPyModelWrapper(IModel, IDifferentiable, ICalculateVarianceReduction, IEnt
         self.model._trigger_params_changed()
 
 
+def dSigma(x_predict: np.ndarray, x_train: np.ndarray, kern: GPy.kern, w_inv: np.ndarray) -> np.ndarray:
+    """
+    Compute the derivative of the posterior covariance with respect to the prediction input
+
+    :param x_predict: Prediction inputs of shape (q, d)
+    :param x_train: Training inputs of shape (n, d)
+    :param kern: Covariance of the GP model
+    :param w_inv: Woodbury inverse of the posterior fit of the GP
+    :return: Gradient of the posterior covariance of shape (q, q, q, d)
+    """
+    q, d, n = x_predict.shape[0], x_predict.shape[1], x_train.shape[0]
+    dkxX_dx = np.empty((q, n, d))
+    dkxx_dx = np.empty((q, q, d))
+    for i in range(d):
+        dkxX_dx[:, :, i] = kern.dK_dX(x_predict, x_train, i)
+        dkxx_dx[:, :, i] = kern.dK_dX(x_predict, x_predict, i)
+    K = kern.K(x_predict, x_train)
+
+    dsigma = np.zeros((q, q, q, d))
+    for i in range(q):
+        for j in range(d):
+            Ks = np.zeros((q, n))
+            Ks[i, :] = dkxX_dx[i, :, j]
+            dKss_dxi = np.zeros((q, q))
+            dKss_dxi[i, :] = dkxx_dx[i, :, j]
+            dKss_dxi[:, i] = dkxx_dx[i, :, j].T
+            dKss_dxi[i, i] = 0
+            dsigma[:, :, i, j] = dKss_dxi - Ks @ w_inv @ K.T - K @ w_inv @ Ks.T
+    return dsigma
+
+
+def dmean(x_predict: np.ndarray, x_train: np.ndarray, kern: GPy.kern, w_vec: np.ndarray) -> np.ndarray:
+    """
+    Compute the derivative of the posterior mean with respect to prediction input
+
+    :param x: Prediction inputs of shape (q, d)
+    :param X: Training inputs of shape (n, d)
+    :param kern: Covariance of the GP model
+    :param w_inv: Woodbury vector of the posterior fit of the GP
+    :return: Gradient of the posterior mean of shape (q, q, d)
+    """
+    q, d, n = x_predict.shape[0], x_predict.shape[1], x_train.shape[0]
+    dkxX_dx = np.empty((q, n, d))
+    dmu = np.zeros((q, q, d))
+    for i in range(d):
+        dkxX_dx[:, :, i] = kern.dK_dX(x_predict, x_train, i)
+        for j in range(q):
+            dmu[j, j, i] = (dkxX_dx[j, :, i][None, :] @ w_vec[:, None]).flatten()
+    return dmu
 
 class GPyMultiOutputWrapper(IModel, IDifferentiable, ICalculateVarianceReduction, IEntropySearchModel):
     """
@@ -241,3 +311,33 @@ class GPyMultiOutputWrapper(IModel, IDifferentiable, ICalculateVarianceReduction
         :return: An array of shape n_points x 1 of posterior covariances between X1 and X2
         """
         return self.gpy_model.posterior_covariance_between_points(X1, X2)
+
+    def generate_hyperparameters_samples(self, n_samples = 10, n_burnin = 5, subsample_interval  = 1,
+                                         step_size = 1e-1, leapfrog_steps = 1) -> None:
+        """
+        Generates the samples from the hyper-parameters
+        :param n_samples: Number of generated samples.
+        :param n_burning: Number of initial samples not used.
+        :param subsample_interval: Interval of subsampling from HMC samples.
+        :param step_size: Size of the gradient steps in the HMC sampler.
+        :param leapfrog_steps: Number of gradient steps before each Metropolis Hasting step.
+        :return: A numpy array whose rows are samples of the hyper-parameters.
+
+        """
+        self.gpy_model.optimize(max_iters=self.n_optimization_restarts)
+        self.gpy_model.param_array[:] = self.gpy_model.param_array * (1.+np.random.randn(self.gpy_model.param_array.size)*0.01)
+        hmc = GPy.inference.mcmc.HMC(self.gpy_model, stepsize = step_size)
+        samples = hmc.sample(num_samples = n_burnin + n_samples * subsample_interval, hmc_iters = leapfrog_steps)
+        hmc_samples = samples[n_burnin::subsample_interval]
+        return hmc_samples
+
+    def fix_model_hyperparameters(self, sample_hyperparameters: np.ndarray) -> None:
+        """
+        Fix model hyperparameters
+
+        """
+        if self.gpy_model._fixes_ is None:
+            self.gpy_model[:] = sample_hyperparameters
+        else:
+            self.gpy_model[self.gpy_model._fixes_] = sample_hyperparameters
+        self.gpy_model._trigger_params_changed()

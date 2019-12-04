@@ -4,12 +4,11 @@
 
 from ...core.loop.loop_state import create_loop_state
 from ...core.loop import OuterLoop, SequentialPointCalculator, FixedIntervalUpdater, ModelUpdater
-from ...core.optimization import AcquisitionOptimizerBase
-from ...core.optimization import GradientAcquisitionOptimizer
+from ...core.optimization import AcquisitionOptimizerBase, GradientAcquisitionOptimizer
 from ...core.parameter_space import ParameterSpace
 from ...core.acquisition import Acquisition
-from ...quadrature.methods import VanillaBayesianQuadrature
-from ...quadrature.acquisitions import IntegralVarianceReduction
+from ..methods import VanillaBayesianQuadrature
+from ..acquisitions import IntegralVarianceReduction
 
 
 class VanillaBayesianQuadratureLoop(OuterLoop):
@@ -33,7 +32,7 @@ class VanillaBayesianQuadratureLoop(OuterLoop):
         if model_updater is None:
             model_updater = FixedIntervalUpdater(model, 1)
 
-        space = ParameterSpace(model.integral_bounds.convert_to_list_of_continuous_parameters())
+        space = ParameterSpace(model.reasonable_box_bounds.convert_to_list_of_continuous_parameters())
         if acquisition_optimizer is None:
             acquisition_optimizer = GradientAcquisitionOptimizer(space)
         candidate_point_calculator = SequentialPointCalculator(acquisition, acquisition_optimizer)

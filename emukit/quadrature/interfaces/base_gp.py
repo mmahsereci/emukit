@@ -6,7 +6,7 @@ import numpy as np
 from typing import Tuple
 
 from ...core.interfaces import IModel
-from ...quadrature.kernels.quadrature_kernels import QuadratureKernel
+from ..kernels.quadrature_kernels import QuadratureKernel
 
 
 class IBaseGaussianProcess(IModel):
@@ -43,11 +43,14 @@ class IBaseGaussianProcess(IModel):
         """
         raise NotImplementedError
 
-    def gram_chol(self) -> np.ndarray:
+    def solve_linear(self, z: np.ndarray) -> np.ndarray:
         """
-        The lower triangular cholesky decomposition of the Gram matrix :math:`G(X, X) = K(X, X) + \sigma^2 I`.
+        Solve the linear system G(X, X)x=z for x.
+        G(X, X) is the Gram matrix :math:`G(X, X) = K(X, X) + \sigma^2 I`, of shape (num_dat, num_dat) and z is a
+        matrix of shape (num_dat, num_obs).
 
-        :return: a lower triangular cholesky of G(X, X)
+        :param z: a matrix of shape (num_dat, num_obs)
+        :return: the solution to the linear system G(X, X)x = z, shape (num_dat, num_obs)
         """
         raise NotImplementedError
 

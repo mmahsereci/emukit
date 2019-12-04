@@ -7,20 +7,24 @@ from scipy.linalg import lapack
 from typing import Tuple
 
 from ...quadrature.interfaces.base_gp import IBaseGaussianProcess
+from ...core.interfaces.models import IDifferentiable
 from .warped_bq_model import WarpedBayesianQuadratureModel
-from .integration_measures import UniformMeasure
 
 
-class VanillaBayesianQuadrature(WarpedBayesianQuadratureModel):
+class VanillaBayesianQuadrature(WarpedBayesianQuadratureModel, IDifferentiable):
     """
-    class for vanilla Bayesian quadrature
+    Vanilla Bayesian quadrature.
+
+    Vanilla Bayesian quadrature uses a Gaussian process as surrogate for the integrand.
     """
 
-    def __init__(self, base_gp: IBaseGaussianProcess):
+    def __init__(self, base_gp: IBaseGaussianProcess, X: np.ndarray, Y: np.ndarray):
         """
         :param base_gp: a model derived from BaseGaussianProcess
+        :param X: the initial locations of integrand evaluations
+        :param Y: the values of the integrand at Y
         """
-        super(VanillaBayesianQuadrature, self).__init__(base_gp)
+        super(VanillaBayesianQuadrature, self).__init__(base_gp=base_gp, X=X, Y=Y)
 
     def transform(self, Y: np.ndarray) -> np.ndarray:
         """ Transform from base-GP to integrand """
@@ -53,56 +57,31 @@ class VanillaBayesianQuadrature(WarpedBayesianQuadratureModel):
         m, cov = self.base_gp.predict_with_full_covariance(X_pred)
         return m, cov, m, cov
 
-    def integrate(self, measure: UniformMeasure = None) -> Tuple[float, float]:
+    def integrate(self) -> Tuple[float, float]:
         """
         Computes an estimator of the integral as well as its variance.
 
-        :param measure: The measure which is integrated against (default is Lebesgue)
-        :returns: estimator of integral and its variance
-        """
-        if measure is None:
-            integral_mean, integral_var = self._integrate_lebesgue()
-        elif isinstance(measure, UniformMeasure):
-            integral_mean, integral_var = self._integrate_uniform(measure)
-        else:
-            raise ValueError('unknown measure')
-        return integral_mean, integral_var
-
-    def _integrate_lebesgue(self) -> Tuple[float, float]:
-        """
-        Computes integral against Lebesgue measure
         :returns: estimator of integral and its variance
         """
         kernel_mean_X = self.base_gp.kern.qK(self.X)
         integral_mean = np.dot(kernel_mean_X, self.base_gp.graminv_residual())[0, 0]
-        integral_var = self.base_gp.kern.qKq() - np.square(lapack.dtrtrs(self.base_gp.gram_chol(), kernel_mean_X.T,
-                                                           lower=1)[0]).sum(axis=0, keepdims=True)[0][0]
+        integral_var = self.base_gp.kern.qKq() - (kernel_mean_X @ self.base_gp.solve_linear(kernel_mean_X.T))[0, 0]
         return integral_mean, integral_var
 
-    def _integrate_uniform(self, measure: UniformMeasure) -> Tuple[float, float]:
+    def get_prediction_gradients(self, X: np.ndarray) -> Tuple:
         """
-        Computes integral against Uniform measure.
-        :param measure: A uniform measure
-        :returns: estimator of integral and its variance
+        Computes and returns model gradients of mean and variance at given points
+
+        :param X: points to compute gradients at, shape (num_points, dim)
+        :returns: Tuple of gradients of mean and variance, shapes of both (num_points, dim)
         """
-        # get max of both lower bounds and min of both upper bounds and integrate over the resulting bounds.
-        # This is equivalent (up to the uniform density) to integrating with respect to the uniform measure.
-        integral_bounds = self.integral_bounds.bounds
-        uniform_bounds = measure.bounds
-        old_integral_bound_list = self.integral_bounds.bounds.copy()
-        new_integral_bound_list = [(max(int_bounds[0], uni_bounds[0]), min(int_bounds[1], uni_bounds[1]))
-                                   for int_bounds, uni_bounds in zip(integral_bounds, uniform_bounds)]
+        # gradient of mean
+        d_mean_dx = (self.base_gp.kern.dK_dx1(X, self.X) @ self.base_gp.graminv_residual())[:, :, 0].T
 
-        # setting new bounds also checks bound validity
-        self.integral_bounds = new_integral_bound_list
-        integral_mean_lebesgue, integral_var_lebesgue = self._integrate_lebesgue()
-        self.integral_bounds = old_integral_bound_list
+        # gradient of variance
+        dKdiag_dx = self.base_gp.kern.dKdiag_dx(X)
+        dKxX_dx1 = self.base_gp.kern.dK_dx1(X, self.X)
+        graminv_KXx = self.base_gp.solve_linear(self.base_gp.kern.K(self.base_gp.X, X))
+        d_var_dx = dKdiag_dx - 2. * (dKxX_dx1 * np.transpose(graminv_KXx)).sum(axis=2, keepdims=False)
 
-        integral_mean = measure.density * integral_mean_lebesgue
-        integral_var = (measure.density**2) * integral_var_lebesgue
-        return integral_mean, integral_var
-
-    def _compute_integral_mean_and_kernel_mean(self) -> Tuple[float, np.ndarray]:
-        kernel_mean_X = self.base_gp.kern.qK(self.X)
-        integral_mean = np.dot(kernel_mean_X, self.base_gp.graminv_residual())[0, 0]
-        return integral_mean, kernel_mean_X
+        return d_mean_dx, d_var_dx.T
