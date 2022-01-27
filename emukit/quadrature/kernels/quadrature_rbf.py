@@ -2,14 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+from typing import List, Optional, Tuple
+
 import numpy as np
 from scipy.special import erf
-from typing import List, Tuple, Optional
 
-from .quadrature_kernels import QuadratureKernel
 from ...quadrature.interfaces.standard_kernels import IRBF
-from ...quadrature.kernels.integration_measures import IntegrationMeasure, IsotropicGaussianMeasure, UniformMeasure
 from ...quadrature.kernels.bounds import BoxBounds
+from ...quadrature.kernels.integration_measures import IntegrationMeasure, IsotropicGaussianMeasure, UniformMeasure
+from .quadrature_kernels import QuadratureKernel
 
 
 class QuadratureRBF(QuadratureKernel):
@@ -186,15 +187,17 @@ class QuadratureRBFIsoGaussMeasure(QuadratureRBF):
         """
         super().__init__(rbf_kernel=rbf_kernel, integral_bounds=None, measure=measure, variable_names=variable_names)
 
-    def qK(self, x2: np.ndarray) -> np.ndarray:
+    def qK(self, x2: np.ndarray, scale_factor: float = 1.) -> np.ndarray:
         """
         RBF kernel with the first component integrated out aka kernel mean
 
         :param x2: remaining argument of the once integrated kernel, shape (n_point N, input_dim)
+        :param scale_factor: scales the lengthscale of the RBF kernel with the multiplicative factor.
         :returns: kernel mean at location x2, shape (1, N)
         """
-        det_factor = (self.measure.variance / self.lengthscale ** 2 + 1) ** (self.input_dim / 2)
-        scale = np.sqrt(self.lengthscale ** 2 + self.measure.variance)
+        lengthscale = scale_factor * self.lengthscale
+        det_factor = (self.measure.variance / lengthscale ** 2 + 1) ** (self.input_dim / 2)
+        scale = np.sqrt(lengthscale ** 2 + self.measure.variance)
         scaled_vector_diff = self._scaled_vector_diff(x2, self.measure.mean, scale)
         kernel_mean = (self.variance / det_factor) * np.exp(- np.sum(scaled_vector_diff ** 2, axis=1))
         return kernel_mean.reshape(1, -1)

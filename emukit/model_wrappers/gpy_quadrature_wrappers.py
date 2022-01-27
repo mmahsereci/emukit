@@ -2,15 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import numpy as np
-from typing import Tuple, List, Optional
-import GPy
+from typing import List, Optional, Tuple
 
-from emukit.quadrature.interfaces.standard_kernels import IRBF
+import GPy
+import numpy as np
+from scipy.linalg import lapack
+
 from emukit.quadrature.interfaces import IBaseGaussianProcess
-from emukit.quadrature.kernels.quadrature_kernels import QuadratureKernel
-from emukit.quadrature.kernels.quadrature_rbf import QuadratureRBFIsoGaussMeasure, QuadratureRBFLebesgueMeasure, QuadratureRBFUniformMeasure
+from emukit.quadrature.interfaces.standard_kernels import IRBF
 from emukit.quadrature.kernels.integration_measures import IntegrationMeasure, IsotropicGaussianMeasure, UniformMeasure
+from emukit.quadrature.kernels.quadrature_kernels import QuadratureKernel
+from emukit.quadrature.kernels.quadrature_rbf import (
+    QuadratureRBFIsoGaussMeasure,
+    QuadratureRBFLebesgueMeasure,
+    QuadratureRBFUniformMeasure,
+)
 
 
 class BaseGaussianProcessGPy(IBaseGaussianProcess):
@@ -75,13 +81,17 @@ class BaseGaussianProcessGPy(IBaseGaussianProcess):
         """
         return self.gpy_model.predict(X_pred, full_cov=True)
 
-    def gram_chol(self) -> np.ndarray:
+    def solve_linear(self, z: np.ndarray) -> np.ndarray:
         """
-        The lower triangular cholesky decomposition of the kernel Gram matrix
+        Solve the linear system G(X, X)x=z for x.
+        G(X, X) is the Gram matrix :math:`G(X, X) = K(X, X) + \sigma^2 I`, of shape (num_dat, num_dat) and z is a
+        matrix of shape (num_dat, num_obs).
 
-        :return: a lower triangular matrix being the cholesky matrix of the kernel Gram matrix
+        :param z: a matrix of shape (num_dat, num_obs)
+        :return: the solution to the linear system G(X, X)x = z, shape (num_dat, num_obs)
         """
-        return self.gpy_model.posterior.woodbury_chol
+        lower_chol = self.gpy_model.posterior.woodbury_chol
+        return lapack.dtrtrs(lower_chol.T, (lapack.dtrtrs(lower_chol, z, lower=1)[0]), lower=0)[0]
 
     def graminv_residual(self) -> np.ndarray:
         """

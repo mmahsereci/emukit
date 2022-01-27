@@ -2,19 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import numpy as np
 from typing import Tuple
 
-from ...core.interfaces import IModel
-from ...quadrature.kernels.quadrature_kernels import QuadratureKernel
+import numpy as np
+
+from ...core.interfaces import IDifferentiable, IModel
+from ..kernels.quadrature_kernels import QuadratureKernel
 
 
-class IBaseGaussianProcess(IModel):
-    """
-    Interface for the quadrature base-GP model
-    An instance of this can be passed as 'base_gp' to an ApproximateWarpedGPSurrogate object.
+class IBaseGaussianProcess(IModel, IDifferentiable):
+    """Interface for the quadrature base-GP model
 
-    If this GP is initialized with data, use the raw evaluations Y of the integrand and not transformed values.
+    An instance of this can be passed as 'base_gp' to an
+    :class:`emukit.quadrature.methods.warped_bq_model.WarpedBayesianQuadratureModel` instance.
+
+    If this GP is initialized with data, use the raw evaluations Y of the integrand and not the transformed values.
     """
 
     def __init__(self, kern: QuadratureKernel) -> None:
@@ -43,13 +45,15 @@ class IBaseGaussianProcess(IModel):
         """
         raise NotImplementedError
 
-    def gram_chol(self) -> np.ndarray:
+    def solve_linear(self, z: np.ndarray) -> np.ndarray:
         """
-        The lower triangular cholesky decomposition of the Gram matrix :math:`G(X, X) = K(X, X) + \sigma^2 I`.
+        Solve the linear system G(X, X)x=z for x.
+        G(X, X) is the Gram matrix :math:`G(X, X) = K(X, X) + \sigma^2 I`, of shape (num_dat, num_dat) and z is a
+        matrix of shape (num_dat, num_obs).
 
-        :return: a lower triangular cholesky of G(X, X)
+        :param z: a matrix of shape (num_dat, num_obs)
+        :return: the solution to the linear system G(X, X)x = z, shape (num_dat, num_obs)
         """
-        # Todo: is it too much to impose the cholesky? maybe inverse would be better
         raise NotImplementedError
 
     def graminv_residual(self) -> np.ndarray:
@@ -65,3 +69,20 @@ class IBaseGaussianProcess(IModel):
         :return: the inverse Gram matrix multiplied with the mean-corrected data with shape: (number of datapoints, 1)
         """
         raise NotImplementedError
+
+    def get_prediction_gradients(self, X: np.ndarray) -> Tuple:
+        """Compute predictive gradients of mean and variance at given points.
+
+        :param X: Points to compute gradients at, shape (n_points, input_dim).
+        :returns: Tuple of gradients of mean and variance, shapes of both (n_points, input_dim).
+        """
+        # gradient of mean
+        d_mean_dx = (self.kern.dK_dx1(X, self.X) @ self.graminv_residual())[:, :, 0].T
+
+        # gradient of variance
+        dKdiag_dx = self.kern.dKdiag_dx(X)
+        dKxX_dx1 = self.kern.dK_dx1(X, self.X)
+        graminv_KXx = self.solve_linear(self.kern.K(self.X, X))
+        d_var_dx = dKdiag_dx - 2. * (dKxX_dx1 * np.transpose(graminv_KXx)).sum(axis=2, keepdims=False)
+
+        return d_mean_dx, d_var_dx.T

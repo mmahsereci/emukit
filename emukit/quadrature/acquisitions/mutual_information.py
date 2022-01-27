@@ -2,12 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import numpy as np
 from typing import Tuple
 
+import numpy as np
+
 from ...core.acquisition import Acquisition
+from ..methods import VanillaBayesianQuadrature
 from .squared_correlation import SquaredCorrelation
-from ...quadrature.methods import VanillaBayesianQuadrature
 
 
 class MutualInformation(Acquisition):

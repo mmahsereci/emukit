@@ -2,8 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+from typing import List, Tuple
+
 import numpy as np
-from typing import Tuple, List
+
+from ...core.optimization.context_manager import ContextManager
 
 
 class IntegrationMeasure:
@@ -18,8 +21,18 @@ class IntegrationMeasure:
     def compute_density(self, x: np.ndarray) -> np.ndarray:
         """
         Computes the density at point x
-        :param x: points at which density is computed, shape (num_points, dim)
+        :param x: points at which density is computed, shape (num_points, num_dimensions)
         :return: the density at x, shape (num_points, )
+        """
+        raise NotImplementedError
+
+    def compute_density_gradient(self, x: np.ndarray) -> np.ndarray:
+        """
+        Computes the gradient of the density at point x.
+        Might be needed for some acquisition functions.
+
+        :param x: points at which the gradient is computed, shape (num_points, num_dimensions)
+        :return: the gradient of the density at x, shape (num_points, num_dimensions)
         """
         raise NotImplementedError
 
@@ -29,6 +42,25 @@ class IntegrationMeasure:
 
         :return: box in which the measure lies. List of D tuples, where D is the dimensionality and the tuples contain
         the lower and upper bounds of the box i.e., [(lb_1, ub_1), (lb_2, ub_2), ..., (lb_D, ub_D)]
+        """
+        raise NotImplementedError
+
+    @property
+    def can_sample(self) -> bool:
+        """
+        Indicates whether probability measure has sampling available.
+        :return: True if sampling is available
+        """
+        raise NotImplementedError
+
+    def get_samples(self, num_samples: int, context_manager: ContextManager = None) -> np.ndarray:
+        """
+        Samples from the probability distribution defined by the integration measure.
+
+        :param num_samples: number of samples
+        :param context_manager: The context manager that contains variables to fix and the values to fix them to. If a
+        context is given, this method samples from the conditional distribution.
+        :return: samples, shape (num_samples, num_dimensions)
         """
         raise NotImplementedError
 
@@ -51,9 +83,9 @@ class UniformMeasure(IntegrationMeasure):
 
         self.bounds = bounds
         # uniform measure has constant density which is computed here.
-        self.density = self._compute_density()
+        self.density = self._compute_constant_density()
 
-    def _compute_density(self) -> float:
+    def _compute_constant_density(self) -> float:
         differences = np.array([x[1] - x[0] for x in self.bounds])
         volume = np.prod(differences)
 
@@ -62,10 +94,18 @@ class UniformMeasure(IntegrationMeasure):
                 volume))
         return float(1. / volume)
 
+    @property
+    def can_sample(self) -> bool:
+        """
+        Indicates whether probability measure has sampling available.
+        :return: True if sampling is available
+        """
+        return True
+
     def compute_density(self, x: np.ndarray) -> np.ndarray:
         """
         Computes the density at point x
-        :param x: points at which density is computed, shape (num_points, dim)
+        :param x: points at which density is computed, shape (num_points, num_dimensions)
         :return: the density at x, shape (num_points, )
         """
         # compute density: (i) check if points are inside the box. (ii) multiply this bool value with density.
@@ -78,6 +118,14 @@ class UniformMeasure(IntegrationMeasure):
         inside_upper_lower = (inside_lower * inside_upper).sum(axis=1) == x.shape[1]
         return inside_upper_lower * self.density
 
+    def compute_density_gradient(self, x: np.ndarray) -> np.ndarray:
+        """
+        Computes the gradient of the density at point x
+        :param x: points at which the gradient is computed, shape (num_points, num_dimensions)
+        :return: the gradient of the density at x, shape (num_points, num_dimensions)
+        """
+        return np.zeros(x.shape)
+
     def get_box(self) -> List[Tuple[float, float]]:
         """
         Meaningful box-bounds around the measure. Outside this box, the measure should be virtually zero.
@@ -86,6 +134,26 @@ class UniformMeasure(IntegrationMeasure):
         the lower and upper bounds of the box i.e., [(lb_1, ub_1), (lb_2, ub_2), ..., (lb_D, ub_D)]
         """
         return self.bounds
+
+    def get_samples(self, num_samples: int, context_manager: ContextManager=None) -> np.ndarray:
+        """
+        Samples from the uniform distribution.
+
+        :param num_samples: number of samples
+        :param context_manager: The context manager that contains variables to fix and the values to fix them to. If a
+        context is given, this method samples from the conditional distribution.
+        :return: samples, shape (num_samples, num_dimensions)
+        """
+
+        D = len(self.bounds)
+        bounds = np.asarray(self.bounds)
+
+        samples = np.random.rand(num_samples, D) * (bounds[:, 1] - bounds[:, 0]) + bounds[:, 0]
+
+        if context_manager is not None:
+            samples[:, context_manager.context_idxs] = context_manager.context_values
+
+        return samples
 
 
 class IsotropicGaussianMeasure(IntegrationMeasure):
@@ -98,7 +166,7 @@ class IsotropicGaussianMeasure(IntegrationMeasure):
 
     def __init__(self, mean: np.ndarray, variance: float):
         """
-        :param mean: the mean of the Gaussian, shape (dim, )
+        :param mean: the mean of the Gaussian, shape (num_dimensions, )
         :param variance: the scalar variance of the isotropic covariance matrix of the Gaussian.
         """
         super().__init__('GaussianMeasure')
@@ -118,21 +186,38 @@ class IsotropicGaussianMeasure(IntegrationMeasure):
 
         self.mean = mean
         self.variance = variance
-        self.dim = mean.shape[0]
+        self.num_dimensions = mean.shape[0]
 
     @property
     def full_covariance_matrix(self):
-        return self.variance * np.eye(self.dim)
+        return self.variance * np.eye(self.num_dimensions)
+
+    @property
+    def can_sample(self) -> bool:
+        """
+        Indicates whether probability measure has sampling available.
+        :return: True if sampling is available
+        """
+        return True
 
     def compute_density(self, x: np.ndarray) -> np.ndarray:
         """
         Computes the density at point x
-        :param x: points at which density is computed, shape (num_points, dim)
+        :param x: points at which density is computed, shape (num_points, num_dimensions)
         :return: the density at x, shape (num_points, )
         """
-        factor = (2 * np.pi * self.variance) ** (self.dim / 2)
+        factor = (2 * np.pi * self.variance) ** (self.num_dimensions / 2)
         scaled_diff = (x - self.mean) / (np.sqrt(2 * self.variance))
         return np.exp(- np.sum(scaled_diff ** 2, axis=1)) / factor
+
+    def compute_density_gradient(self, x: np.ndarray) -> np.ndarray:
+        """
+        Computes the gradient of the density at point x
+        :param x: points at which the gradient is computed, shape (num_points, num_dimensions)
+        :return: the gradient of the density at x, shape (num_points, num_dimensions)
+        """
+        values = self.compute_density(x)
+        return ((- values / self.variance) * (x - self.mean).T).T
 
     def get_box(self) -> List[Tuple[float, float]]:
         """
@@ -148,6 +233,24 @@ class IsotropicGaussianMeasure(IntegrationMeasure):
         lower = self.mean - factor * np.sqrt(self.variance)
         upper = self.mean + factor * np.sqrt(self.variance)
         return list(zip(lower, upper))
+
+    def get_samples(self, num_samples: int, context_manager: ContextManager=None) -> np.ndarray:
+        """
+        Samples from the isotropic Gaussian distribution.
+
+        :param num_samples: number of samples
+        :param context_manager: The context manager that contains variables to fix and the values to fix them to. If a
+        context is given, this method samples from the conditional distribution.
+        :return: samples, shape (num_samples, num_dimensions)
+        """
+        samples = self.mean + np.sqrt(self.variance) * np.random.randn(num_samples, self.num_dimensions)
+
+        if context_manager is not None:
+            # since the Gaussian is isotropic, fixing the value after sampling the joint is equal to sampling the
+            # conditional.
+            samples[:, context_manager.context_idxs] = context_manager.context_values
+
+        return samples
 
 
 class NumericalPrecisionError(Exception):

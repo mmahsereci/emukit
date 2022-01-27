@@ -11,13 +11,13 @@ Nonlinear information fusion algorithms for data-efficient multi-fidelity modell
 P. Perdikaris, M. Raissi, A. Damianou, N. D. Lawrence and G. E. Karniadakis (2017)
 http://web.mit.edu/parisp/www/assets/20160751.full.pdf
 """
-from typing import Tuple, List, Type
+from typing import List, Tuple, Type
 
-import numpy as np
 import GPy
+import numpy as np
 
-from ...core.interfaces import IModel, IDifferentiable
-from ..convert_lists_to_array import convert_y_list_to_array, convert_x_list_to_array
+from ...core.interfaces import IDifferentiable, IModel
+from ..convert_lists_to_array import convert_x_list_to_array, convert_y_list_to_array
 
 
 def make_non_linear_kernels(base_kernel_class: Type[GPy.kern.Kern],
@@ -325,7 +325,8 @@ class NonLinearMultiFidelityModel(IModel, IDifferentiable):
         # Optimize all models for all fidelities but lowest fidelity
         for i in range(1, self.n_fidelities):
             # Set new X values because previous model has changed
-            previous_mean, _ = self.models[i - 1].predict(self.models[i].X)
+            is_ith_fidelity = self.X[:, self._fidelity_idx] == i
+            previous_mean, _ = self._predict_deterministic(self.X[is_ith_fidelity, :-1], i)
             augmented_input = np.concatenate([self.models[i].X[:, :-1], previous_mean], axis=1)
             self.models[i].set_X(augmented_input)
 

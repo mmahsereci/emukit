@@ -3,13 +3,14 @@
 
 
 import numpy as np
+
 try:
     import pyDOE
 except ImportError:
     raise ImportError('pyDOE needs to be installed in order to use latin design')
 
-from .base import ModelFreeDesignBase
 from .. import ParameterSpace
+from .base import ModelFreeDesignBase
 
 
 class LatinDesign(ModelFreeDesignBase):
@@ -29,7 +30,7 @@ class LatinDesign(ModelFreeDesignBase):
         Generates requested amount of points.
 
         :param point_count: Number of points required.
-        :return: A numpy array with shape (point_count x space_dim)
+        :return: A numpy array of generated samples, shape (point_count x space_dim)
         """
         bounds = self.parameter_space.get_bounds()
         X_design_aux = pyDOE.lhs(len(bounds), point_count, criterion='center')

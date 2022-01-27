@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import numpy as np
-from scipy.linalg import lapack
 from typing import Tuple
 
+import numpy as np
+
 from ...core.acquisition import Acquisition
-from ...quadrature.methods import VanillaBayesianQuadrature
+from ..methods import VanillaBayesianQuadrature
 
 
 class SquaredCorrelation(Acquisition):
@@ -87,10 +87,11 @@ class SquaredCorrelation(Acquisition):
         qKx = self.model.base_gp.kern.qK(x)
         qKX = self.model.base_gp.kern.qK(self.model.base_gp.X)
 
-        predictive_cov = np.transpose(qKx - np.dot(qKX, self._graminv_Kx(x)))
+        graminv_KXx = self.model.base_gp.solve_linear(self.model.base_gp.kern.K(self.model.base_gp.X, x))
+        predictive_cov = np.transpose(qKx - np.dot(qKX, graminv_KXx))
         return integral_current_var, y_predictive_var, predictive_cov
 
-    def _gradient_terms(self, x):
+    def _gradient_terms(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Computes the terms needed for the gradient of the squared correlation
 
@@ -98,46 +99,15 @@ class SquaredCorrelation(Acquisition):
         :return: the gradient of (y_predictive_var, predictive_cov) wrt. x at param x, shapes (n_points, input_dim)
         """
         # gradient of predictive variance of y
-        dvar_dx = self.model.base_gp.kern.dKdiag_dx(x)
-        dKxX_dx1 = self.model.base_gp.kern.dK_dx1(x, self.model.X)
-        graminv_KXx = self._graminv_Kx(x)
-
-        d_y_predictive_var_dx = dvar_dx - 2. * (dKxX_dx1 * np.transpose(graminv_KXx)).sum(axis=2, keepdims=False)
+        d_y_predictive_var_dx = self.model.get_prediction_gradients(x)[1].T
 
         # gradient of predictive covariance between integral and (x, y)-pair
         dqKx_dx = np.transpose(self.model.base_gp.kern.dqK_dx(x))
-        qKX_graminv = self._qK_graminv()  # (1, N)
+
+        qKX = self.model.base_gp.kern.qK(self.model.base_gp.X)
+        qKX_graminv = np.transpose(self.model.base_gp.solve_linear(qKX.T))  # (1, N)
+
         dKXx_dx2 = self.model.base_gp.kern.dK_dx2(self.model.X, x)
         d_predictive_cov_dx = dqKx_dx - np.dot(qKX_graminv, np.transpose(dKXx_dx2))[0, :, :]
 
         return np.transpose(d_y_predictive_var_dx), d_predictive_cov_dx
-
-    # helpers
-    def _graminv_Kx(self, x):
-        """
-        Inverse kernel Gram matrix multiplied with kernel function k(x, x') evaluated at existing training datapoints
-        and location x.
-
-        .. math::
-            [K(X, X) + \sigma^2 I]^{-1} K (X, x)
-
-        :param x: (n_points x input_dim) locations where to evaluate
-        :return: (n_train_points, n_points)
-        """
-        lower_chol = self.model.base_gp.gram_chol()
-        KXx = self.model.base_gp.kern.K(self.model.base_gp.X, x)
-        return lapack.dtrtrs(lower_chol.T, (lapack.dtrtrs(lower_chol, KXx, lower=1)[0]), lower=0)[0]
-
-    def _qK_graminv(self):
-        """
-        Inverse kernel mean multiplied with inverse kernel Gram matrix, all evaluated at training locations.
-
-        .. math::
-            \int k(x, X)\mathrm{d}x [k(X, X) + \sigma^2 I]^{-1}
-
-        :return: weights of shape (1, n_train_points)
-        """
-        lower_chol = self.model.base_gp.gram_chol()
-        qK = self.model.base_gp.kern.qK(self.model.base_gp.X)
-        graminv_qK_trans = lapack.dtrtrs(lower_chol.T, (lapack.dtrtrs(lower_chol, qK.T, lower=1)[0]), lower=0)[0]
-        return np.transpose(graminv_qK_trans)

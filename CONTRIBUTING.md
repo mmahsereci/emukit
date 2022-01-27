@@ -42,7 +42,7 @@ So you've implemented a new method for uncertainty quantification and you want t
 
 1. Check existing open, and recently merged, pull requests to make sure someone else hasn't addressed the problem already.
 2. Open an issue to discuss any significant work - we would hate for your time to be wasted.
-3. Working against the latest source on the *master* branch.
+3. Working against the latest source on the *main* branch.
 
 To send us a pull request, please:
 
@@ -81,11 +81,21 @@ Before submitting the pull request, please go through this checklist to make the
 See installing from source.
 
 ### Running tests
-Run the full suite of tests by running:
+Run the full suite of unit tests or integration tests with these commands:
 ```
-python -m pytest
+pytest tests
+pytest integration_tests
 ```
-from the top level directory. This also does coverage checks.
+from the top level directory. To check unit test coverage, run this:
+```
+pytest --verbose --cov emukit --cov-report term-missing tests
+```
+
+Notice that unit tests and integration tests have their own set of additional dependencies. Those can be found in the `requirements` folder, and installed with:
+```
+pip install -r requirements/test_requirements.txt
+pip install -r requirements/integration_test_requirements.txt
+```
 
 ### Generating docs
 Documentation contributions are much appreciated! If you see something incorrect or poorly explained, feel free to fix it and send the update!

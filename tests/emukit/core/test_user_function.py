@@ -1,8 +1,8 @@
-import pytest
 import numpy as np
+import pytest
 from numpy.testing import assert_array_equal
 
-from emukit.core.loop import UserFunctionWrapper, UserFunctionResult
+from emukit.core.loop import UserFunctionResult, UserFunctionWrapper
 from emukit.core.loop.user_function import MultiSourceFunctionWrapper
 
 
@@ -17,6 +17,17 @@ def test_user_function_wrapper_evaluation_single_output():
     for i, record in enumerate(output):
         assert_array_equal(output[i].X, function_input[i])
         assert_array_equal(output[i].Y, function(function_input[i]))
+
+
+def test_user_function_wrapper_callable_single_output():
+    function = lambda x: 2 * x
+    function_input = np.array([[1], [2], [3]])
+    ufw = UserFunctionWrapper(function)
+
+    evaluated_output = ufw.evaluate(function_input)
+    called_output = ufw(function_input)
+    assert len(evaluated_output) == len(called_output)
+    assert all(eo == co for (eo, co) in zip(evaluated_output, called_output))
 
 
 def test_user_function_wrapper_evaluation_with_cost():

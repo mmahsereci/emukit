@@ -2,19 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
+import logging
+
 import numpy as np
 
 from ...core.acquisition import Acquisition
 from ...core.interfaces import IDifferentiable, IModel
 from ...core.loop import FixedIntervalUpdater, OuterLoop, SequentialPointCalculator
-from ...core.loop.loop_state import create_loop_state, LoopState
-from ...core.optimization import AcquisitionOptimizerBase
-from ...core.optimization import GradientAcquisitionOptimizer
+from ...core.loop.loop_state import LoopState, create_loop_state
+from ...core.optimization import AcquisitionOptimizerBase, GradientAcquisitionOptimizer
 from ...core.parameter_space import ParameterSpace
 from ..acquisitions import ExpectedImprovement
 from ..acquisitions.log_acquisition import LogAcquisition
 from ..local_penalization_calculator import LocalPenalizationPointCalculator
 
+_log = logging.getLogger(__name__)
 
 class BayesianOptimizationLoop(OuterLoop):
     def __init__(self, space: ParameterSpace, model: IModel, acquisition: Acquisition = None, update_interval: int = 1,
@@ -45,11 +47,10 @@ class BayesianOptimizationLoop(OuterLoop):
         if acquisition_optimizer is None:
             acquisition_optimizer = GradientAcquisitionOptimizer(space)
         if batch_size == 1:
+            _log.info("Batch size is 1, using SequentialPointCalculator")
             candidate_point_calculator = SequentialPointCalculator(acquisition, acquisition_optimizer)
         else:
-            if not isinstance(model, IDifferentiable):
-                raise ValueError('Model must implement ' + str(IDifferentiable) +
-                                 ' for use with Local Penalization batch method.')
+            _log.info("Batch size is " + str(batch_size) + ", using LocalPenalizationPointCalculator")
             log_acquisition = LogAcquisition(acquisition)
             candidate_point_calculator = LocalPenalizationPointCalculator(log_acquisition, acquisition_optimizer, model,
                                                                           space, batch_size)

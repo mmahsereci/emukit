@@ -10,22 +10,24 @@ in experimental design.
 """
 
 import abc
+import logging
 from typing import Callable, List
 
 import numpy as np
 
 from .user_function_result import UserFunctionResult
 
-
-import logging
 _log = logging.getLogger(__name__)
 
 
-class UserFunction(abc.ABC):
+class UserFunction(abc.ABC, Callable):
     """ The user supplied function is interrogated as part of the outer loop """
     @abc.abstractmethod
     def evaluate(self, X: np.ndarray) -> List[UserFunctionResult]:
         pass
+
+    def __call__(self, X: np.ndarray) -> List[UserFunctionResult]:
+        return self.evaluate(X)
 
 
 class UserFunctionWrapper(UserFunction):

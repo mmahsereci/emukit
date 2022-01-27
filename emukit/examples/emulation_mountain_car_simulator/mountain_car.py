@@ -1,8 +1,8 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+from IPython.display import display
 from JSAnimation.IPython_display import display_animation
 from matplotlib import animation
-from IPython.display import display
 from pylab import cm
 
 N_STEPS_MAX = 500
@@ -205,6 +205,6 @@ def evaluate_model(model, x, fidelity):
     elif fidelity == 'multi-linear':
         x_extended = np.hstack([x, np.ones([x.shape[0], 1])])
         y = model.predict(x_extended)[0]
-    elif fidelity == 'multi-deep':
-        y = evalute_deep_multi_fidelity(model, x)
+    else:
+        raise ValueError('Unknown fidelity')
     return y

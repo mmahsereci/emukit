@@ -5,22 +5,25 @@ import pytest
 import pytest_lazyfixture
 from scipy.optimize import check_grad
 
-from bayesian_optimization.test_entropy_search import entropy_search_acquisition
-from emukit.bayesian_optimization.acquisitions import ExpectedImprovement, NegativeLowerConfidenceBound, EntropySearch
-from emukit.bayesian_optimization.acquisitions import MaxValueEntropySearch
-from emukit.core.acquisition import IntegratedHyperParameterAcquisition
+from emukit.bayesian_optimization.acquisitions import (
+    MUMBO,
+    EntropySearch,
+    ExpectedImprovement,
+    MaxValueEntropySearch,
+    NegativeLowerConfidenceBound,
+    ProbabilityOfFeasibility,
+    ProbabilityOfImprovement,
+)
 from emukit.bayesian_optimization.acquisitions.entropy_search import MultiInformationSourceEntropySearch
 from emukit.bayesian_optimization.acquisitions.log_acquisition import LogAcquisition
-from emukit.core import ParameterSpace, ContinuousParameter, InformationSourceParameter
+from emukit.core import ContinuousParameter, InformationSourceParameter, ParameterSpace
+from emukit.core.acquisition import IntegratedHyperParameterAcquisition
 from emukit.core.acquisition.acquisition_per_cost import CostAcquisition
-
-from emukit.bayesian_optimization.acquisitions import ProbabilityOfImprovement
-from emukit.bayesian_optimization.acquisitions import ProbabilityOfFeasibility
-from emukit.experimental_design.acquisitions import ModelVariance, IntegratedVarianceReduction
+from emukit.experimental_design.acquisitions import IntegratedVarianceReduction, ModelVariance
 from emukit.model_wrappers.gpy_quadrature_wrappers import create_emukit_model_from_gpy_model
-from emukit.quadrature.acquisitions import SquaredCorrelation, MutualInformation
+from emukit.quadrature.acquisitions import MutualInformation, SquaredCorrelation, UncertaintySampling
 from emukit.quadrature.methods import VanillaBayesianQuadrature
-
+from emukit.samplers import AffineInvariantEnsembleSampler
 
 # This is the step sized used by scipy.optimize.check_grad to calculate the numerical gradient
 gradient_check_step_size = 1e-8
@@ -36,9 +39,11 @@ acquisition_tests = [acquisition_test_tuple('negative_lower_confidence_bound_acq
                      acquisition_test_tuple('model_variance_acquisition', True, 1e-5),
                      acquisition_test_tuple('squared_correlation_acquisition', True, 1e-3),
                      acquisition_test_tuple('mutual_information_acquisition', True, 1e-3),
+                     acquisition_test_tuple('uncertainty_sampling_acquisition', True, 1e-3),
                      acquisition_test_tuple('entropy_search_acquisition', False, np.nan),
                      acquisition_test_tuple('max_value_entropy_search_acquisition', False, np.nan),
                      acquisition_test_tuple('multi_source_entropy_search_acquisition', False, np.nan),
+                     acquisition_test_tuple('MUMBO_acquisition', False, np.nan),
                      acquisition_test_tuple('integrated_variance_acquisition', False, np.nan),
                      acquisition_test_tuple('integrated_expected_improvement_acquisition', True, default_grad_tol),
                      acquisition_test_tuple('integrated_probability_of_improvement_acquisition', False, np.nan),
@@ -95,6 +100,12 @@ def probability_of_improvement_acquisition(gpy_model):
 
 
 @pytest.fixture
+def entropy_search_acquisition(gpy_model, continuous_space):
+    sampler = AffineInvariantEnsembleSampler(continuous_space)
+    return EntropySearch(gpy_model, continuous_space, sampler, num_representer_points=10)
+
+
+@pytest.fixture
 def max_value_entropy_search_acquisition(gpy_model, continuous_space):
     return MaxValueEntropySearch(gpy_model, continuous_space, num_samples=2, grid_size=100)
 
@@ -120,10 +131,22 @@ def mutual_information_acquisition(vanilla_bq_model):
 
 
 @pytest.fixture
+def uncertainty_sampling_acquisition(vanilla_bq_model):
+    return UncertaintySampling(vanilla_bq_model)
+
+
+@pytest.fixture
 @pytest.mark.parametrize('n_dims', [2])
 def multi_source_entropy_search_acquisition(gpy_model):
     space = ParameterSpace([ContinuousParameter('x1', 0, 1), InformationSourceParameter(2)])
     return MultiInformationSourceEntropySearch(gpy_model, space, num_representer_points=10)
+
+
+@pytest.fixture
+@pytest.mark.parametrize('n_dims', [2])
+def MUMBO_acquisition(gpy_model):
+    space = ParameterSpace([ContinuousParameter('x1', 0, 1), InformationSourceParameter(2)])
+    return MUMBO(gpy_model, space, num_samples = 10, grid_size = 5000)
 
 
 # Helpers for creating parameterized fixtures
@@ -145,6 +168,10 @@ def create_gradient_acquisition_fixtures():
 # Tests
 @pytest.mark.parametrize('acquisition', create_acquisition_fixture_parameters())
 def test_acquisition_evaluate_shape(acquisition, n_dims):
+    x = np.random.rand(1, n_dims)
+    acquisition_value = acquisition.evaluate(x)
+    assert acquisition_value.shape == (1, 1)
+
     x = np.random.rand(10, n_dims)
     acquisition_value = acquisition.evaluate(x)
     assert acquisition_value.shape == (10, 1)
@@ -166,7 +193,11 @@ def test_acquisition_gradient_computation(acquisition, n_dims, tol):
 @pytest.mark.parametrize(('acquisition', 'tol'), create_gradient_acquisition_fixtures())
 def test_acquisition_gradient_shapes(acquisition, n_dims, tol):
     rng = np.random.RandomState(43)
-    x_test = rng.rand(10, n_dims)
 
+    x_test = rng.rand(1, n_dims)
+    gradients = acquisition.evaluate_with_gradients(x_test)[1]
+    assert gradients.shape == (1, n_dims)
+
+    x_test = rng.rand(10, n_dims)
     gradients = acquisition.evaluate_with_gradients(x_test)[1]
     assert gradients.shape == (10, n_dims)

@@ -1,10 +1,10 @@
 import numpy as np
 
-from emukit.bayesian_optimization.loops.cost_sensitive_bayesian_optimization_loop import \
-    CostSensitiveBayesianOptimizationLoop
-from emukit.core import ParameterSpace, ContinuousParameter
-from emukit.core.acquisition import IntegratedHyperParameterAcquisition
-from emukit.core.acquisition import acquisition_per_expected_cost
+from emukit.bayesian_optimization.loops.cost_sensitive_bayesian_optimization_loop import (
+    CostSensitiveBayesianOptimizationLoop,
+)
+from emukit.core import ContinuousParameter, ParameterSpace
+from emukit.core.acquisition import IntegratedHyperParameterAcquisition, acquisition_per_expected_cost
 from emukit.core.loop import FixedIntervalUpdater, SequentialPointCalculator
 from emukit.core.loop.loop_state import create_loop_state
 from emukit.core.optimization import RandomSearchAcquisitionOptimizer
@@ -62,7 +62,7 @@ class FabolasLoop(CostSensitiveBayesianOptimizationLoop):
         acquisition_optimizer = RandomSearchAcquisitionOptimizer(extended_space, num_eval_points=num_eval_points)
         candidate_point_calculator = SequentialPointCalculator(acquisition, acquisition_optimizer)
 
-        loop_state = create_loop_state(model_objective.X, model_objective.Y, model_cost.Y)
+        loop_state = create_loop_state(model_objective.X, model_objective.Y, cost=model_cost.Y)
 
         super(CostSensitiveBayesianOptimizationLoop, self).__init__(candidate_point_calculator,
                                                                     [model_updater_objective, model_updater_cost],

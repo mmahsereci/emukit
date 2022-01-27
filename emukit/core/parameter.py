@@ -2,11 +2,22 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-import numpy as np
 from typing import List, Tuple
+
+import numpy as np
 
 
 class Parameter(object):
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __str__(self):
+        return f"<Parameter: {self.name}>"
+
+    def __repr__(self):
+        return f"Parameter({self.name})"
+
     @property
     def dimension(self) -> int:
         """

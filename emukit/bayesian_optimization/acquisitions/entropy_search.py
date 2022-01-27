@@ -2,20 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 
 
-from typing import Union, Callable
+from typing import Callable, Union
 
-import scipy
 import numpy as np
+import scipy
 
 from ...core import InformationSourceParameter
 from ...core.acquisition import Acquisition
 from ...core.interfaces import IModel
 from ...core.parameter_space import ParameterSpace
 from ...samplers import AffineInvariantEnsembleSampler, McmcSampler
-
+from .. import epmgp
 from ..acquisitions import ExpectedImprovement
 from ..interfaces import IEntropySearchModel
-from .. import epmgp
 
 
 class EntropySearch(Acquisition):
@@ -190,7 +189,7 @@ class EntropySearch(Acquisition):
 
         new_entropy = np.mean(H_p)
         entropy_change = new_entropy - self.p_min_entropy
-        return np.array([[entropy_change]])
+        return entropy_change.reshape(-1, 1)
 
     def _innovations(self, x: np.ndarray) -> tuple:
         """
