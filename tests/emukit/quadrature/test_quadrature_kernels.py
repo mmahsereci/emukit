@@ -9,11 +9,18 @@ import pytest
 from pytest_lazyfixture import lazy_fixture
 from utils import check_grad, sample_uniform
 
-from emukit.model_wrappers.gpy_quadrature_wrappers import BrownianGPy, ProductMatern32GPy, ProductMatern52GPy, RBFGPy
+from emukit.model_wrappers.gpy_quadrature_wrappers import (
+    BrownianGPy,
+    ProductBrownianGPy,
+    ProductMatern32GPy,
+    ProductMatern52GPy,
+    RBFGPy,
+)
 from emukit.quadrature.interfaces import IStandardKernel
 from emukit.quadrature.kernels import (
     QuadratureBrownianLebesgueMeasure,
     QuadratureKernel,
+    QuadratureProductBrownianLebesgueMeasure,
     QuadratureProductMatern32LebesgueMeasure,
     QuadratureProductMatern52LebesgueMeasure,
     QuadratureRBFIsoGaussMeasure,
@@ -43,6 +50,18 @@ class DataLebesqueSDElike:
     # x1 and x2 must lay inside domain
     x1 = np.array([[0.3], [0.8], [1.5]])
     x2 = np.array([[0.25], [0.5], [1.0], [1.2]])
+    N = 3
+    M = 4
+    dat_bounds = integral_bounds
+
+
+@dataclass
+class DataPositiveDomain:
+    D = 2
+    integral_bounds = [(0.1, 2), (0.2, 3)]
+    # x1 and x2 must lay inside domain
+    x1 = np.array([[0.3, 1], [0.8, 0.5], [1.5, 2.8]])
+    x2 = np.array([[0.25, 1.1], [0.5, 0.3], [1.0, 1.3], [1.2, 1.2]])
     N = 3
     M = 4
     dat_bounds = integral_bounds
@@ -88,9 +107,9 @@ class DataUniformInfinite:
 
 @dataclass
 class EmukitRBF:
-    ell = 0.8
+    ell = np.array([0.8, 1.3])
     var = 0.5
-    kern = RBFGPy(GPy.kern.RBF(input_dim=2, lengthscale=ell, variance=var))
+    kern = RBFGPy(GPy.kern.RBF(input_dim=2, lengthscale=ell, variance=var, ARD=True))
 
 
 @dataclass
@@ -111,6 +130,13 @@ class EmukitProductMatern52:
 class EmukitBrownian:
     var = 0.5
     kern = BrownianGPy(GPy.kern.Brownian(input_dim=1, variance=var))
+
+
+@dataclass
+class EmukitProductBrownian:
+    variance = 0.7
+    offset = -1.8
+    kern = ProductBrownianGPy(variance=variance, input_dim=2, offset=offset)
 
 
 def get_qrbf_lebesque():
@@ -158,6 +184,12 @@ def get_qbrownian_lebesque():
     return qkern, dat
 
 
+def get_qprodbrownian_lebesque():
+    dat = DataPositiveDomain()
+    qkern = QuadratureProductBrownianLebesgueMeasure(EmukitProductBrownian().kern, integral_bounds=dat.integral_bounds)
+    return qkern, dat
+
+
 # == fixtures start here
 @pytest.fixture
 def qrbf_lebesgue():
@@ -201,6 +233,12 @@ def qbrownian_lebesgue():
     return qkern, dat.x1, dat.x2, dat.N, dat.M, dat.D, dat.dat_bounds
 
 
+@pytest.fixture
+def qprodbrownian_lebesque():
+    qkern, dat = get_qprodbrownian_lebesque()
+    return qkern, dat.x1, dat.x2, dat.N, dat.M, dat.D, dat.dat_bounds
+
+
 embeddings_test_list = [
     lazy_fixture("qrbf_lebesgue"),
     lazy_fixture("qrbf_gauss_iso"),
@@ -209,6 +247,7 @@ embeddings_test_list = [
     lazy_fixture("qmatern32_lebesgue"),
     lazy_fixture("qmatern52_lebesgue"),
     lazy_fixture("qbrownian_lebesgue"),
+    lazy_fixture("qprodbrownian_lebesque"),
 ]
 
 
@@ -232,13 +271,14 @@ def test_qkernel_shapes(kernel_embedding):
 @pytest.mark.parametrize(
     "kernel_embedding,interval",
     [
-        (embeddings_test_list[0], [25.44288768595132, 25.477412341193933]),
-        (embeddings_test_list[1], [0.06887117418934532, 0.0690632609840969]),
-        (embeddings_test_list[2], [0.13248136022581258, 0.13261016559792643]),
-        (embeddings_test_list[3], [0.10728920097517262, 0.10840368292018744]),
+        (embeddings_test_list[0], [38.267217898004176, 38.32112525041843]),
+        (embeddings_test_list[1], [0.10107780172175222, 0.10132860168906656]),
+        (embeddings_test_list[2], [0.19925694197982124, 0.19946236996755512]),
+        (embeddings_test_list[3], [0.15840594393483423, 0.16003690383217276]),
         (embeddings_test_list[4], [33.6816570527734, 33.726646173769595]),
         (embeddings_test_list[5], [36.311780552275614, 36.36134818184079]),
         (embeddings_test_list[6], [0.6528048146871609, 0.653858667201299]),
+        (embeddings_test_list[7], [147.1346099151547, 147.3099172678195]),
     ],
 )
 def test_qkernel_qKq(kernel_embedding, interval):
@@ -259,10 +299,10 @@ def test_qkernel_qKq(kernel_embedding, interval):
             embeddings_test_list[0],
             np.array(
                 [
-                    [0.9926741638312642, 1.0051626943298606],
-                    [1.7780365301782586, 1.791985583265183],
-                    [1.8441910952044895, 1.8580451530301265],
-                    [0.9655979101225538, 0.9774348722979349],
+                    [1.5229873955135163, 1.537991178335842],
+                    [2.828702323003249, 2.843692090253037],
+                    [2.937171398518155, 2.9515842742084026],
+                    [1.4729457662097771, 1.4865846411248254],
                 ]
             ),
         ),
@@ -270,10 +310,10 @@ def test_qkernel_qKq(kernel_embedding, interval):
             embeddings_test_list[1],
             np.array(
                 [
-                    [0.09034074640097703, 0.09112080046226054],
-                    [0.09528577689218103, 0.09607836957414669],
-                    [0.07773935082749345, 0.07851215820581145],
-                    [0.06262796599593302, 0.06326617370265221],
+                    [0.12486974030387826, 0.125750078406417],
+                    [0.13992078671537916, 0.14081149568263046],
+                    [0.11892561016472149, 0.1197587877306684],
+                    [0.09729471848600614, 0.09804968814418509],
                 ]
             ),
         ),
@@ -281,10 +321,10 @@ def test_qkernel_qKq(kernel_embedding, interval):
             embeddings_test_list[2],
             np.array(
                 [
-                    [0.001823024771520544, 0.001845887383131982],
-                    [0.03276625478518347, 0.03306556124987184],
-                    [0.1463640842176958, 0.1472923670864844],
-                    [0.09091056723140134, 0.09179787301481163],
+                    [0.0025833432131653527, 0.0026102032690476376],
+                    [0.04944675394035977, 0.049787440901278915],
+                    [0.2261261172372856, 0.22702516713823856],
+                    [0.13864144061870695, 0.13964034282804863],
                 ]
             ),
         ),
@@ -292,10 +332,10 @@ def test_qkernel_qKq(kernel_embedding, interval):
             embeddings_test_list[3],
             np.array(
                 [
-                    [0.03611462576615197, 0.03673576064006068],
-                    [0.03274871262181519, 0.03329912802666011],
-                    [0.1107611315779423, 0.11240486902543063],
-                    [0.07555953336253515, 0.07707036213410368],
+                    [0.051114899926392225, 0.051864595281735905],
+                    [0.049445661548958596, 0.05012618410666687],
+                    [0.16911997207023577, 0.17112895120953275],
+                    [0.1230570007633014, 0.12493562466971112],
                 ]
             ),
         ),
@@ -329,6 +369,17 @@ def test_qkernel_qKq(kernel_embedding, interval):
                     [0.3273488543068163, 0.3276377242105884],
                     [0.5394358272402537, 0.5405072045782628],
                     [0.5892821601114948, 0.5906529816223602],
+                ]
+            ),
+        ),
+        (
+            embeddings_test_list[7],
+            np.array(
+                [
+                    [20.968328255845666, 20.979953254056394],
+                    [17.64001267572194, 17.645133556673045],
+                    [27.768537209548015, 27.794406087839107],
+                    [28.16022039838578, 28.189287432609166],
                 ]
             ),
         ),
@@ -378,7 +429,7 @@ def test_qkernel_gradient_values(kernel_embedding):
     # dKdiag_dx
     in_shape = x1.shape
     func = lambda x: np.diag(emukit_qkernel.K(x, x))
-    dfunc = lambda x: emukit_qkernel.dKdiag_dx(x1)
+    dfunc = lambda x: emukit_qkernel.dKdiag_dx(x)
     check_grad(func, dfunc, in_shape, dat_bounds)
 
     # dK_dx1
@@ -419,6 +470,21 @@ def test_qkernel_raises():
 
 
 def test_brownian_qkernel_raises():
+
+    # bounds have wrong dimensionality
     wrong_bounds = [(1, 2), (1, 2)]
     with pytest.raises(ValueError):
         QuadratureBrownianLebesgueMeasure(BrownianGPy(GPy.kern.Brownian()), integral_bounds=wrong_bounds)
+
+    # bounds are negative
+    wrong_bounds = [(-1, 2)]
+    with pytest.raises(ValueError):
+        QuadratureBrownianLebesgueMeasure(BrownianGPy(GPy.kern.Brownian()), integral_bounds=wrong_bounds)
+
+    # bounds are smaller thn offset (product kernel)
+    offset = -2
+    wrong_bounds = [(offset - 1, offset + 1), (offset + 1, offset + 2)]
+    with pytest.raises(ValueError):
+        QuadratureProductBrownianLebesgueMeasure(
+            ProductBrownianGPy(input_dim=2, offset=offset), integral_bounds=wrong_bounds
+        )

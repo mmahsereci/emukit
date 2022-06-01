@@ -45,12 +45,13 @@ class IStandardKernel:
 class IRBF(IStandardKernel):
     r"""Interface for an RBF kernel.
 
-
     .. math::
-        k(x, x') = \sigma^2 e^{-\frac{1}{2}\frac{\|x-x'\|^2}{\lambda^2}},
+        k(x, x') = \sigma^2 e^{-\frac{1}{2}\sum_{i=1}^{d}r_i^2},
 
-    where :math:`\sigma^2` is the ``variance`` property and :math:`\lambda` is the
-    ``lengthscale`` property.
+    where :math:`d` is the input dimensionality,
+    :math:`r_i = \frac{x_i-x_i'}{\lambda_i}` is the scaled vector difference of dimension :math:`i`,
+    :math:`\lambda_i` is the :math:`i` th element of the ``lengthscales`` property
+    and :math:`\sigma^2` is the ``variance`` property.
 
     .. note::
         Inherit from this class to wrap your standard RBF kernel. The wrapped kernel can then be
@@ -65,8 +66,8 @@ class IRBF(IStandardKernel):
     """
 
     @property
-    def lengthscale(self) -> float:
-        r"""The lengthscale :math:`\lambda` of the kernel."""
+    def lengthscales(self) -> np.ndarray:
+        r"""The lengthscales :math:`\lambda` of the kernel."""
         raise NotImplementedError
 
     @property
@@ -75,10 +76,8 @@ class IRBF(IStandardKernel):
         raise NotImplementedError
 
     def dK_dx1(self, x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
-        K = self.K(x1, x2)
-        scaled_vector_diff = (x1.T[:, :, None] - x2.T[:, None, :]) / self.lengthscale**2
-        dK_dx1 = -K[None, ...] * scaled_vector_diff
-        return dK_dx1
+        scaled_vector_diff = np.swapaxes((x1[None, :, :] - x2[:, None, :]) / self.lengthscales**2, 0, -1)
+        return -self.K(x1, x2)[None, ...] * scaled_vector_diff
 
     def dKdiag_dx(self, x: np.ndarray) -> np.ndarray:
         return np.zeros((x.shape[1], x.shape[0]))
@@ -86,8 +85,6 @@ class IRBF(IStandardKernel):
 
 class IProductMatern32(IStandardKernel):
     r"""Interface for a Matern32 product kernel.
-
-    Inherit from this class to wrap your ProductMatern32 kernel.
 
     The product kernel is of the form
     :math:`k(x, x') = \sigma^2 \prod_{i=1}^d k_i(x, x')` where
@@ -149,8 +146,6 @@ class IProductMatern32(IStandardKernel):
 
 class IProductMatern52(IStandardKernel):
     r"""Interface for a Matern52 product kernel.
-
-    Inherit from this class to wrap your ProductMatern52 kernel.
 
     The product kernel is of the form
     :math:`k(x, x') = \sigma^2 \prod_{i=1}^d k_i(x, x')` where
@@ -241,3 +236,53 @@ class IBrownian(IStandardKernel):
 
     def dKdiag_dx(self, x: np.ndarray) -> np.ndarray:
         return self.variance * np.ones((x.shape[1], x.shape[0]))
+
+
+class IProductBrownian(IStandardKernel):
+    r"""Interface for a Brownian product kernel.
+
+    The product kernel is of the form
+    :math:`k(x, x') = \sigma^2 \prod_{i=1}^d k_i(x, x')` where
+
+    .. math::
+        k_i(x, x') = \operatorname{min}(x_i-c, x_i'-c)\quad\text{with}\quad x_i, x_i' \geq c,
+
+    :math:`d` is the input dimensionality,
+    :math:`\sigma^2` is the ``variance`` property
+    and :math:`c` is the ``offset`` property.
+
+    Make sure to encode only a single variance parameter, and not one for each individual :math:`k_i`.
+
+    .. note::
+        Inherit from this class to wrap your standard product Brownian kernel. The wrapped kernel can then be
+        handed to a quadrature product Brownian kernel that augments it with integrability.
+
+    .. seealso::
+       * :class:`emukit.quadrature.kernels.QuadratureProductBrownian`
+       * :class:`emukit.quadrature.kernels.QuadratureProductBrownianLebesgueMeasure`
+
+    """
+
+    @property
+    def variance(self) -> float:
+        r"""The scale :math:`\sigma^2` of the kernel."""
+        raise NotImplementedError
+
+    @property
+    def offset(self) -> float:
+        r"""The offset :math:`c` of the kernel."""
+        raise NotImplementedError
+
+    def _dK_dx1_1d(self, x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
+        """Unscaled gradient of 1D Brownian kernel.
+
+        This method can be used in case the product Brownian is implemented via a List of
+        Brownian kernels.
+
+        :param x1: First argument of the kernel, shape = (n_points N,).
+        :param x2: Second argument of the kernel, shape = (n_points M,).
+        :return: The gradient of the kernel wrt x1 evaluated at (x1, x2), shape (N, M).
+        """
+        x1_rep = np.repeat(x1[np.newaxis, ...], x2.shape[0], axis=0).T
+        x2_rep = np.repeat(x2[np.newaxis, ...], x1.shape[0], axis=0)
+        return x1_rep < x2_rep
