@@ -10,7 +10,9 @@ class IStandardKernel:
 
     .. seealso::
        * :class:`emukit.quadrature.interfaces.IRBF`
+       * :class:`emukit.quadrature.interfaces.IProductMatern52`
        * :class:`emukit.quadrature.interfaces.IProductMatern32`
+       * :class:`emukit.quadrature.interfaces.IProductBrownian`
 
     """
 
@@ -60,8 +62,7 @@ class IRBF(IStandardKernel):
     .. seealso::
        * :class:`emukit.quadrature.kernels.QuadratureRBF`
        * :class:`emukit.quadrature.kernels.QuadratureRBFLebesgueMeasure`
-       * :class:`emukit.quadrature.kernels.QuadratureRBFIsoGaussMeasure`
-       * :class:`emukit.quadrature.kernels.QuadratureRBFUniformMeasure`
+       * :class:`emukit.quadrature.kernels.QuadratureRBFGaussianMeasure`
 
     """
 
@@ -78,6 +79,67 @@ class IRBF(IStandardKernel):
     def dK_dx1(self, x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
         scaled_vector_diff = np.swapaxes((x1[None, :, :] - x2[:, None, :]) / self.lengthscales**2, 0, -1)
         return -self.K(x1, x2)[None, ...] * scaled_vector_diff
+
+    def dKdiag_dx(self, x: np.ndarray) -> np.ndarray:
+        return np.zeros((x.shape[1], x.shape[0]))
+
+
+class IProductMatern12(IStandardKernel):
+    r"""Interface for a Matern12 (a.k.a. Exponential) product kernel.
+
+    The product kernel is of the form
+    :math:`k(x, x') = \sigma^2 \prod_{i=1}^d k_i(x, x')` where
+
+    .. math::
+        k_i(x, x') = e^{-r_i}.
+
+    :math:`d` is the input dimensionality,
+    :math:`r_i:=\frac{|x_i - x'_i|}{\lambda_i}`,
+    :math:`\sigma^2` is the ``variance`` property and :math:`\lambda_i` is the :math:`i` th element
+    of the ``lengthscales`` property.
+
+    Make sure to encode only a single variance parameter, and not one for each individual :math:`k_i`.
+
+    .. note::
+        Inherit from this class to wrap your standard product Matern12 kernel. The wrapped kernel can then be
+        handed to a quadrature product Matern12 kernel that augments it with integrability.
+
+    .. seealso::
+       * :class:`emukit.quadrature.kernels.QuadratureProductMatern12`
+       * :class:`emukit.quadrature.kernels.QuadratureProductMatern12LebesgueMeasure`
+
+    """
+
+    @property
+    def nu(self) -> float:
+        """The smoothness parameter of the kernel."""
+        return 0.5
+
+    @property
+    def lengthscales(self) -> np.ndarray:
+        r"""The lengthscales :math:`\lambda` of the kernel."""
+        raise NotImplementedError
+
+    @property
+    def variance(self) -> float:
+        r"""The scale :math:`\sigma^2` of the kernel."""
+        raise NotImplementedError
+
+    def _dK_dx1_1d(self, x1: np.ndarray, x2: np.ndarray, lengthscale: float) -> np.ndarray:
+        """Unscaled gradient of 1D Matern12 where ``lengthscale`` is the lengthscale parameter.
+
+        This method can be used in case the product Matern12 is implemented via a List of
+        univariate Matern12 kernels.
+
+        :param x1: First argument of the kernel, shape = (n_points N,).
+        :param x2: Second argument of the kernel, shape = (n_points M,).
+        :param lengthscale: The lengthscale of the 1D Matern12.
+        :return: The gradient of the kernel wrt x1 evaluated at (x1, x2), shape (N, M).
+        """
+        r = (x1.T[:, None] - x2.T[None, :]) / lengthscale  # N x M
+        dr_dx1 = r / (lengthscale * abs(r))
+        dK_dr = -np.exp(-abs(r))
+        return dK_dr * dr_dx1
 
     def dKdiag_dx(self, x: np.ndarray) -> np.ndarray:
         return np.zeros((x.shape[1], x.shape[0]))
@@ -124,19 +186,19 @@ class IProductMatern32(IStandardKernel):
         r"""The scale :math:`\sigma^2` of the kernel."""
         raise NotImplementedError
 
-    def _dK_dx1_1d(self, x1: np.ndarray, x2: np.ndarray, ell: float) -> np.ndarray:
-        """Unscaled gradient of 1D Matern32 where ``ell`` is the lengthscale parameter.
+    def _dK_dx1_1d(self, x1: np.ndarray, x2: np.ndarray, lengthscale: float) -> np.ndarray:
+        """Unscaled gradient of 1D Matern32 where ``lengthscale`` is the lengthscale parameter.
 
         This method can be used in case the product Matern32 is implemented via a List of
         univariate Matern32 kernels.
 
         :param x1: First argument of the kernel, shape = (n_points N,).
         :param x2: Second argument of the kernel, shape = (n_points M,).
-        :param ell: The lengthscale of the 1D Matern32.
+        :param lengthscale: The lengthscale of the 1D Matern32.
         :return: The gradient of the kernel wrt x1 evaluated at (x1, x2), shape (N, M).
         """
-        r = (x1.T[:, None] - x2.T[None, :]) / ell  # N x M
-        dr_dx1 = r / (ell * abs(r))
+        r = (x1.T[:, None] - x2.T[None, :]) / lengthscale  # N x M
+        dr_dx1 = r / (lengthscale * abs(r))
         dK_dr = -3 * abs(r) * np.exp(-np.sqrt(3) * abs(r))
         return dK_dr * dr_dx1
 
@@ -185,19 +247,19 @@ class IProductMatern52(IStandardKernel):
         r"""The scale :math:`\sigma^2` of the kernel."""
         raise NotImplementedError
 
-    def _dK_dx1_1d(self, x1: np.ndarray, x2: np.ndarray, ell: float) -> np.ndarray:
-        """Unscaled gradient of 1D Matern52 where ``ell`` is the lengthscale parameter.
+    def _dK_dx1_1d(self, x1: np.ndarray, x2: np.ndarray, lengthscale: float) -> np.ndarray:
+        """Unscaled gradient of 1D Matern52 where ``lengthscale`` is the lengthscale parameter.
 
         This method can be used in case the product Matern52 is implemented via a List of
         univariate Matern52 kernels.
 
         :param x1: First argument of the kernel, shape = (n_points N,).
         :param x2: Second argument of the kernel, shape = (n_points M,).
-        :param ell: The lengthscale of the 1D Matern52.
+        :param lengthscale: The lengthscale of the 1D Matern52.
         :return: The gradient of the kernel wrt x1 evaluated at (x1, x2), shape (N, M).
         """
-        r = (x1.T[:, None] - x2.T[None, :]) / ell  # N x M
-        dr_dx1 = r / (ell * abs(r))
+        r = (x1.T[:, None] - x2.T[None, :]) / lengthscale  # N x M
+        dr_dx1 = r / (lengthscale * abs(r))
         dK_dr = (-5 / 3) * np.exp(-np.sqrt(5) * abs(r)) * (abs(r) + np.sqrt(5) * r**2)
         return dK_dr * dr_dx1
 
