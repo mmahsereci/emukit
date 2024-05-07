@@ -1,4 +1,7 @@
-# Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright 2020-2024 The Emukit Authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 
@@ -48,9 +51,7 @@ class ModelFreeMonteCarloSensitivity(object):
         Saltelli estimators of the total mean and variance
         """
 
-        variable_main_variance = (
-            sum(f_main_sample * f_new_fixing_sample) / (num_monte_carlo_points - 1) - total_mean**2
-        )
+        variable_main_variance = sum(f_main_sample * f_new_fixing_sample) / (num_monte_carlo_points - 1) - total_mean**2
         variable_total_variance = (
             total_variance - sum(f_fixing_sample * f_new_fixing_sample) / (num_monte_carlo_points - 1) + total_mean**2
         )

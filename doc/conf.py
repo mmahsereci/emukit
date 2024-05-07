@@ -1,17 +1,9 @@
-# Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-#
-#   Licensed under the Apache License, Version 2.0 (the "License").
-#   You may not use this file except in compliance with the License.
-#   A copy of the License is located at
-#
-#       http://www.apache.org/licenses/LICENSE-2.0
-#
-#   or in the "license" file accompanying this file. This file is distributed
-#   on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
-#   express or implied. See the License for the specific language governing
-#   permissions and limitations under the License.
-# ==============================================================================
-# -*- coding: utf-8 -*-
+# Copyright 2020-2024 The Emukit Authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 
 from datetime import datetime
 import os
@@ -19,7 +11,7 @@ import shutil
 import sys
 from os.path import abspath, dirname
 
-# -- Mock graphing modules - workaround for optinal dependencies as well as for wrong behavior of some required ones
+# -- Mock graphing modules - workaround for optional dependencies as well as for wrong behavior of some required ones
 from unittest.mock import MagicMock
 
 
@@ -35,7 +27,7 @@ sys.modules.update((module_name, Mock()) for module_name in MOCK_MODULES)
 # -- Project information -----------------------------------------------------
 
 project = 'emukit'
-copyright = '{}, Amazon.com'.format(datetime.now().year)
+copyright = '{}, Emukit authors'.format(datetime.now().year)
 
 exec(open("../emukit/__version__.py").read())
 version = __version__ # noqa: variable __version__ is defined in exec above
@@ -101,7 +93,7 @@ exclude_patterns = ['_build', '**.ipynb_checkpoints', '_templates', '**.cfg']
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = 'en'
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
@@ -154,7 +146,7 @@ autosummary_generate = True
 
 # -- intersphinx extension --
 # Example configuration for intersphinx: refer to the Python standard library.
-intersphinx_mapping = {'https://docs.python.org/': None}
+intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
 
 # -- nbsphinx extension --
 # Allow notebooks to have errors when generating docs

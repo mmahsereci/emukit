@@ -1,11 +1,14 @@
-# Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# Copyright 2020-2024 The Emukit Authors. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
+
+# Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 
 from dataclasses import dataclass
 
 import numpy as np
 import pytest
-from pytest_lazyfixture import lazy_fixture
 from utils import check_grad
 
 from emukit.quadrature.measures import BoxDomain, GaussianMeasure, LebesgueMeasure
@@ -73,10 +76,10 @@ def gauss_measure():
 
 
 measure_test_list = [
-    lazy_fixture("lebesgue_measure"),
-    lazy_fixture("lebesgue_measure_normalized"),
-    lazy_fixture("gauss_iso_measure"),
-    lazy_fixture("gauss_measure"),
+    DataLebesgueMeasure(),
+    DataLebesgueNormalizedMeasure(),
+    DataGaussIsoMeasure(),
+    DataGaussMeasure(),
 ]
 
 

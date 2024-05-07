@@ -1,9 +1,16 @@
+# Copyright 2020-2024 The Emukit Authors. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Copyright 2018-2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+
 """
 Tests for multi-fidelity kernels
 """
 import GPy
 import numpy as np
-from GPy.testing.kernel_tests import check_kernel_gradient_functions
+from GPy.testing.test_kernel import check_kernel_gradient_functions
 
 import emukit.multi_fidelity
 
